@@ -1,0 +1,21 @@
+{
+ "harness": "v001",
+ "label": "test",
+ "env_digest": "744e7905c8d1",
+ "n": 60,
+ "scored": 60,
+ "errors": 0,
+ "correct": 49,
+ "accuracy": 0.8167,
+ "ci95": [
+  0.7008,
+  0.8944
+ ],
+ "in_top3_differential": 54,
+ "no_diagnosis": 0,
+ "leaks": 0,
+ "mean_questions": 3.18,
+ "mean_requests": 5.5,
+ "mean_duration_s": 28.41,
+ "total_cost_usd": 0.78
+}

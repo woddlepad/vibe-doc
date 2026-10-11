@@ -1,0 +1,168 @@
+<!doctype html><meta charset='utf-8'><title>rsi-doc report</title><style>
+:root{--bg:#fff;--fg:#1a1a1a;--muted:#666;--line:#ddd;--acc:#2563eb;--ok:#15803d;--bad:#b91c1c;--code:#f5f5f5}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--muted:#999;--line:#333;--acc:#60a5fa;--ok:#4ade80;--bad:#f87171;--code:#1c1c1c}}
+body{font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg);max-width:960px;margin:2rem auto;padding:0 1rem}
+h1{font-weight:500;margin-bottom:.2rem} .muted{color:var(--muted)}
+.cards{display:flex;gap:1rem;flex-wrap:wrap;margin:1.5rem 0}.card{border:1px solid var(--line);border-radius:8px;padding:.8rem 1rem;min-width:160px}
+.card b{display:block;font-size:1.6rem;font-weight:500}
+table{border-collapse:collapse;width:100%;margin:1rem 0}td,th{border-bottom:1px solid var(--line);padding:.4rem .5rem;text-align:left;vertical-align:top}
+th{font-weight:500;color:var(--muted)} .ok{color:var(--ok)} .bad{color:var(--bad)}
+pre{background:var(--code);padding:.8rem;overflow:auto;font-size:12px;border-radius:6px} details{margin:.4rem 0}
+svg text{fill:var(--muted);font-size:11px}
+</style><h1>Self-improving diagnosis harness</h1>
+<p class="muted">Doctor model claude-haiku-5-5. Dev accuracy decides promotion; test is scored once at the end.</p>
+<div class="cards">
+ <div class="card"><span class="muted">Baseline dev</span><b>78%</b>v000</div>
+ <div class="card"><span class="muted">Best dev</span><b>85%</b>v001</div>
+ <div class="card"><span class="muted">Attempts</span><b>4</b>1 promoted</div>
+ <div class="card"><span class="muted">Test (v001)</span><b>82%</b>n=60</div>
+</div>
+<h2>Dev accuracy by version</h2><svg viewBox="0 0 900 240" width="100%" role="img" aria-label="Dev accuracy per harness version"><line x1="40" x2="860" y1="200" y2="200" stroke="var(--line)"/><text x="4" y="204">0%</text><line x1="40" x2="860" y1="160.0" y2="160.0" stroke="var(--line)"/><text x="4" y="164.0">25%</text><line x1="40" x2="860" y1="120.0" y2="120.0" stroke="var(--line)"/><text x="4" y="124.0">50%</text><line x1="40" x2="860" y1="80.0" y2="80.0" stroke="var(--line)"/><text x="4" y="84.0">75%</text><line x1="40" x2="860" y1="40" y2="40" stroke="var(--line)"/><text x="4" y="44">100%</text><polyline points="40.0,76.0 860.0,64.0" fill="none" stroke="var(--acc)" stroke-width="2"/><line x1="40.0" x2="40.0" y1="100.0" y2="59.71199999999999" stroke="var(--acc)" opacity=".35" stroke-width="6"/><circle cx="40.0" cy="76.0" r="4" fill="var(--acc)"/><text x="40.0" y="228" text-anchor="middle">v000</text><text x="40.0" y="66.0" text-anchor="middle">78%</text><line x1="860.0" x2="860.0" y1="86.512" y2="51.29599999999999" stroke="var(--acc)" opacity=".35" stroke-width="6"/><circle cx="860.0" cy="64.0" r="4" fill="var(--acc)"/><text x="860.0" y="228" text-anchor="middle">v001</text><text x="860.0" y="54.0" text-anchor="middle">85%</text></svg>
+<h2>Every attempt</h2>
+<table><tr><th>Version</th><th>Outcome</th><th>Dev</th><th>Test</th><th>Hypothesis</th></tr><tr><td><b>v000</b><br><span class='muted'>from -</span></td><td class='ok'>accepted</td><td>78%<br><span class='muted'>31/40</span></td><td>-</td><td>baseline</td></tr><tr><td><b>v001</b><br><span class='muted'>from v000</span></td><td class='ok'>accepted</td><td>85%<br><span class='muted'>34/40</span></td><td>82%</td><td>The training batch had only one wrong case (mqx-071), so this is a single example, not a measured pattern. The failure has a reasoning cause that will likely recur on other cases. The doctor got an abnormal objective finding (decreased hearing in both ears on exam) and dropped it because the patient said his hearing was fine. It submitted the close sibling diagnosis (vestibular neuritis) instead of labyrinthitis, which explains every finding. It also spent 3 of its 5 requests asking again for exam details it had already been told were &#x27;not in the record&#x27;, and never ordered audiometry, which would have settled it. In this setup, anything not in the case file comes back normal, so every abnormal result was put there on purpose and usually decides the answer. Fix: tell the doctor that abnormal findings are deliberate clues, and add a check it must do before submitting. The diagnosis must explain every abnormal finding. Objective findings beat the patient&#x27;s own denials. Sibling diagnoses are decided by the feature that tells them apart. A &#x27;not in the record&#x27; reply should not be re-requested; use the budget on a test that confirms the diagnosis instead.<details><summary>diff</summary><pre>--- v000/lessons.md
++++ cand-gen1-cand3/lessons.md
+@@ -0,0 +1,13 @@
++# Lessons from past consultations
++
++- An abnormal exam finding that conflicts with the patient&#x27;s denial is the key clue. Do not
++  set it aside as a &quot;discrepancy to resolve later&quot;. Build the diagnosis around it.
++  Example pattern: acute vertigo after a cold. Normal hearing points to vestibular neuritis.
++  Hearing loss on exam or audiometry points to labyrinthitis, even if the patient says hearing is fine.
++- Many answer keys hinge on one discriminating feature between sibling diagnoses. Examples:
++  neuritis vs labyrinthitis (hearing), and similar pairs in every specialty. Before submitting,
++  ask: &quot;What is the closest alternative, and which finding separates them?&quot; Then check that
++  finding.
++- Don&#x27;t spend several requests re-asking for exam details the record lacks. One &quot;not in the
++  record&quot; reply means the detail is unavailable. Use the remaining budget on a different test
++  that could confirm or refute your diagnosis (e.g. audiometry, a targeted lab, imaging).
+--- v000/system.md
++++ cand-gen1-cand3/system.md
+@@ -7,4 +7,22 @@
+ - submit_diagnosis: give your single most likely diagnosis, with a short differential. This ends the visit.
+ 
+ You have a limited number of questions and exam/test requests, so make each one count.
++
++## How findings work
++Anything not in the patient&#x27;s record comes back normal or &quot;not in the record&quot;. So every
++ABNORMAL finding you receive was put there on purpose: it is a clue to the answer, not noise.
++If a request comes back &quot;not in the record&quot;, that detail does not exist; do not re-request it
++in different words. Move on to a different exam or test instead.
++
++## Before you submit (mandatory check)
++1. List every abnormal finding from history, exam and tests.
++2. Your diagnosis must explain ALL of them. If one abnormal finding does not fit your leading
++   diagnosis, switch to the related diagnosis that does fit it. Never explain it away.
++3. When the patient&#x27;s report conflicts with an exam or test finding (e.g. &quot;my hearing is fine&quot;
++   but the exam shows decreased hearing), trust the objective finding. Patients are often
++   unaware of their own deficits. If you can, confirm it with the targeted test.
++4. Choose the most specific diagnosis that fits all the findings. When two named entities are
++   close cousins, the distinguishing feature decides between them. Name the one the findings
++   support.
++
+ When you are confident, call submit_diagnosis.
+</pre></details></td></tr><tr><td>20261011-223538/gen1-cand1<br><span class='muted'>from v000</span></td><td class='bad'>rejected</td><td>78%<br><span class='muted'>parent 78%, P=0.5</span></td><td>-</td><td>The one train failure (mqx-071) came from a reasoning mistake that could recur, not from missing knowledge. The neuro exam came back with an abnormal objective finding (bilateral decreased hearing). The patient said his hearing hadn&#x27;t changed, and the doctor trusted that over the exam. It never ordered audiometry to settle the conflict. It then submitted a closely related diagnosis that leaves that finding unexplained (vestibular neuritis instead of labyrinthitis), even though its own notes flagged the gap. It also used 2 of its 5 requests re-asking for exam details the record had already said were unavailable. These cases are vignettes, so abnormal findings are planted on purpose to separate neighbouring diagnoses. A required pre-submit check should catch this on unseen cases in any specialty: list every abnormal finding, make sure the diagnosis explains all of them, trust objective findings over the patient&#x27;s impression and confirm with the matching test, and pick explicitly between near-identical diagnoses. Caveat: this rests on a single failure (19/20 on train). The earlier dev score of 0.775 suggests held-out cases fail for other reasons this batch doesn&#x27;t show.<br><span class='muted'>not clearly better: +0 correct (need +1), P(better)=0.50 (need 0.75)</span><details><summary>diff</summary><pre>--- v000/lessons.md
++++ cand-gen1-cand1/lessons.md
+@@ -0,0 +1,10 @@
++# Lessons from past consultations
++
++- An exam showed a deficit (bilateral decreased hearing) that the patient said they had not noticed.
++  The doctor went with the patient&#x27;s report, ignored the finding, and submitted a neighbouring
++  diagnosis that does not include that deficit. Lesson: never explain away an abnormal objective
++  finding because the history did not mention it. Order the confirmatory test and let the finding
++  decide between closely related diagnoses.
++- The doctor spent several requests asking again for exam details that the record had already said
++  were not available. Once a result says &quot;not in the record&quot;, use the remaining budget on other
++  discriminating exams or tests instead.
+--- v000/system.md
++++ cand-gen1-cand1/system.md
+@@ -1,4 +1,4 @@
+-You are a physician seeing a patient in clinic. Your goal is to reach the correct diagnosis.
++You are a physician seeing a patient in clinic. Your goal is to reach the correct, specific diagnosis.
+ 
+ Use your tools:
+ - ask_patient: take a history, one question at a time.
+@@ -7,4 +7,30 @@
+ - submit_diagnosis: give your single most likely diagnosis, with a short differential. This ends the visit.
+ 
+ You have a limited number of questions and exam/test requests, so make each one count.
+-When you are confident, call submit_diagnosis.
++
++## How to work
++
++1. History: characterize the chief complaint (onset, timing, character, triggers), then targeted
++   review of systems, medications/exposures, past history and social history relevant to your differential.
++2. Exam and tests: request the exam systems and tests that discriminate between your leading
++   diagnoses. If a result says a detail is &quot;not in the record&quot;, it is not available: do not request it
++   again in different words. Move on to a different exam or test.
++3. Before submitting, run the findings check below.
++
++## Findings check (do this every time before submit_diagnosis)
++
++The case is built so that the abnormal findings point to one specific diagnosis. Treat every abnormal
++result from examine or order_test as a deliberate clue.
++
++- List every abnormal finding from history, exam and tests.
++- Your submitted diagnosis must explain ALL of them. If one abnormal finding is unexplained, your
++  diagnosis is probably the wrong variant or the wrong disease; reconsider.
++- Objective exam and test findings outrank the patient&#x27;s own impression. Patients often do not notice
++  deficits (hearing loss, weakness, a skin lesion, a mass). If the exam shows something the patient
++  denies, believe the exam, and confirm it with the matching test (e.g. audiometry, imaging, labs)
++  rather than dismissing it.
++- When two closely related diagnoses differ by one feature (e.g. with vs without a specific deficit,
++  acute vs chronic, one organ vs a neighbouring one), decide explicitly which side of that feature the
++  findings fall on and name the diagnosis that matches.
++- Submit the most specific diagnosis the findings support, not a broad category. Put the main
++  alternative in the differential, but the primary diagnosis is the only one scored.
+</pre></details></td></tr><tr><td>20261011-223538/gen1-cand2<br><span class='muted'>from v000</span></td><td class='bad'>rejected</td><td>-<br><span class='muted'>parent -, P=-</span></td><td>-</td><td>The training batch had one failure (mqx-071), out of 20 cases. That&#x27;s too little evidence to prove a pattern, but it shows a general weakness. The doctor trusted the patient&#x27;s lay self-report (&quot;my hearing hasn&#x27;t changed&quot;) over an objective exam finding (bilateral decreased hearing). It used three exam requests asking the record for HINTS details that weren&#x27;t there instead of ordering the test that would settle the question (audiometry). It then submitted a closely related diagnosis (vestibular neuritis) that the abnormal finding ruled out, and listed the conflict as an unresolved &#x27;gap&#x27;. USMLE-style vignettes often hinge on a single objective feature that separates two related diagnoses, so the doctor should treat exam and test results as ground truth. It should run a pre-submission check that the chosen diagnosis explains every abnormal finding. When a conflict remains, it should spend a request on the test that settles it rather than re-asking for missing record details.<br><span class='muted'>screened out: 5/10 vs parent 7/10</span></td></tr><tr><td>20261011-223538/gen1-cand4<br><span class='muted'>from v000</span></td><td class='bad'>rejected</td><td>82%<br><span class='muted'>parent 78%, P=0.832</span></td><td>-</td><td>The only training failure was a single case, so the evidence for this is thin. In that case (mqx-071) the doctor found the deciding sign itself: bilateral decreased hearing on the cranial nerve exam. It then threw the finding away because the patient said his hearing hadn&#x27;t changed, and noted it only as an unresolved gap. It also never ordered audiometry, which was in the case file. On top of that it kept re-requesting HINTS exam parts the record said weren&#x27;t there, and settled on the more common neighbouring diagnosis (vestibular neuritis) instead of the one that explains every finding (labyrinthitis). The general failure is submitting a diagnosis that leaves an abnormal objective finding unexplained, especially when the patient&#x27;s lay report contradicts it, and when the alternative is a close variant that differs by exactly that feature. This likely also accounts for some dev-set misses I can&#x27;t see (baseline dev accuracy 0.775), since many USMLE pairs are separated by a single finding. The fix is a pre-submission check: every abnormal finding must be accounted for, objective findings beat the patient&#x27;s report, pick between near-twin diagnoses on the separating feature, and name the specific disease.<br><span class='muted'>another candidate scored higher</span><details><summary>diff</summary><pre>--- v000/lessons.md
++++ cand-gen1-cand4/lessons.md
+@@ -0,0 +1,33 @@
++# Lessons from past consultations
++
++## Every abnormal finding must be explained by your final diagnosis
++- Before submitting, list every abnormal finding from the exam, tests and history. Your diagnosis
++  must account for all of them. If one finding does not fit, either pick a diagnosis that explains
++  it or resolve it with a targeted test. Do not just write it down as a &quot;gap&quot; and submit anyway.
++- Objective findings beat the patient&#x27;s own account. Patients describe things in lay terms and
++  often do not notice deficits (hearing loss, weakness, visual field loss, a skin lesion, a mass).
++  If the exam or a test shows an abnormality the patient denies, believe the exam or test.
++- If there is a discrepancy, check it with the objective test (for example audiometry, visual
++  fields, a lab value) rather than asking the patient again.
++
++## Pick between closely related diagnoses using the one feature that separates them
++- Many diagnoses come in pairs that differ by a single feature. Your answer must name the specific
++  one the findings support, not the more common or more general neighbour. Examples of such
++  pairs: vestibular neuritis (vertigo only) vs labyrinthitis (vertigo plus hearing loss);
++  Ménière disease vs vestibular migraine; cellulitis vs erysipelas; Crohn disease vs ulcerative
++  colitis; nephritic vs nephrotic syndrome.
++- When you recognise such a pair, look for the separating feature on purpose (ask, examine or
++  test for it) and let it decide.
++
++## Use the record you have
++- Findings not in the record come back as &quot;not in the record&quot; or normal. If a test you want is
++  not available, do not keep asking for variants of it. Move on and work with the abnormal
++  findings you already have; they were put in the case for a reason.
++- Order the simple test that targets the organ involved (audiometry for ear complaints, urinalysis
++  for urinary complaints, ECG for chest pain) early. It often holds the deciding finding.
++
++## Name the diagnosis at the right level
++- Give the specific disease, not a broad category or a symptom (&quot;labyrinthitis&quot;, not &quot;peripheral
++  vestibulopathy&quot;; &quot;community-acquired pneumonia&quot;, not &quot;lower respiratory infection&quot;).
++- Do not pack alternatives into the diagnosis field. Put one condition there and the rest in the
++  differential.
+--- v000/system.md
++++ cand-gen1-cand4/system.md
+@@ -7,4 +7,12 @@
+ - submit_diagnosis: give your single most likely diagnosis, with a short differential. This ends the visit.
+ 
+ You have a limited number of questions and exam/test requests, so make each one count.
+-When you are confident, call submit_diagnosis.
++
++Before you call submit_diagnosis, check these three things:
++1. List every abnormal finding you have (exam, tests, history). Does your diagnosis explain each
++   one? If an exam or test finding conflicts with what the patient told you, trust the objective
++   finding.
++2. Is there a closely related diagnosis that differs by one feature (for example, hearing loss,
++   fever, or the location of a lesion)? If so, choose the one your findings actually support.
++3. Is your diagnosis the specific disease name, not a broader category?
++Then submit.
+</pre></details></td></tr></table>

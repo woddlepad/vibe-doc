@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-5-5",
+ "effort": "medium",
+ "max_questions": 15,
+ "max_requests": 10,
+ "max_turns": 60,
+ "builtin_tools": [],
+ "max_lookups": 5
+}

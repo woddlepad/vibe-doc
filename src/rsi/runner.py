@@ -23,11 +23,12 @@ from claude_agent_sdk import (
 )
 
 from .cases import SOURCE, Case
-from .clinic import CLINIC_TOOLS, TOOL_PREFIX, Budget, Episode, build_clinic_server, examiner_system, patient_system
+from .clinic import TOOL_PREFIX, Budget, Episode, build_clinic_server, clinic_tool_names, examiner_system, patient_system
 from .config import EXAMINER_MODEL, JUDGE_MODEL, PATIENT_MODEL, RUNS
 from .harness import Harness
 from .judge import grade, mentions
 from .llm import Persona
+from .lookup import allowed_url
 from .stats import wilson
 
 CACHE = RUNS / "cache"
@@ -36,10 +37,11 @@ EPISODE_TIMEOUT_S = 20 * 60
 
 @cache
 def env_digest() -> str:
-    """Identity of the frozen environment: role models, simulator and grader code, case data."""
+    """Identity of the frozen environment: role models, simulator, lookup and grader code, case data."""
     here = Path(__file__).parent
     h = hashlib.sha256()
-    for part in (PATIENT_MODEL, EXAMINER_MODEL, JUDGE_MODEL, (here / "clinic.py").read_text(), (here / "judge.py").read_text()):
+    code = [(here / f).read_text() for f in ("clinic.py", "judge.py", "lookup.py")]
+    for part in (PATIENT_MODEL, EXAMINER_MODEL, JUDGE_MODEL, *code):
         h.update(part.encode() + b"\0")
     h.update(hashlib.sha256(SOURCE.read_bytes()).hexdigest().encode())
     return h.hexdigest()[:12]
@@ -50,7 +52,7 @@ def _doctor_options(harness: Harness, staged: Path, server) -> ClaudeAgentOption
     builtins = list(cfg["builtin_tools"])
     if harness.has_skills and "Skill" not in builtins:
         builtins.append("Skill")
-    clinic = [TOOL_PREFIX + t for t in CLINIC_TOOLS]
+    clinic = clinic_tool_names(cfg["max_lookups"])
     return ClaudeAgentOptions(
         system_prompt=harness.system_prompt(),
         model=cfg["model"],
@@ -67,6 +69,30 @@ def _doctor_options(harness: Harness, staged: Path, server) -> ClaudeAgentOption
     )
 
 
+CONTAMINATION_NGRAM = 8
+CONTAMINATION_MIN_SHARED = 3
+
+
+def _ngrams(text: str, n: int = CONTAMINATION_NGRAM) -> set[tuple[str, ...]]:
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
+
+
+def contamination(case: Case, events: list[dict]) -> str | None:
+    """Why a lookup result disqualifies the episode (off-list domain, or the case vignette itself), else None."""
+    case_grams = _ngrams(json.dumps([case.patient, case.exam, case.tests], ensure_ascii=False))
+    for e in events:
+        if e["kind"] != "lookup":
+            continue
+        for r in e["results"]:
+            if r["url"] and not allowed_url(r["url"]):  # url "" is the "lookup failed" placeholder
+                return f"result from a disallowed domain: {r['url']}"
+            shared = len(case_grams & _ngrams(r["text"]))
+            if shared >= CONTAMINATION_MIN_SHARED:
+                return f"{shared} shared {CONTAMINATION_NGRAM}-grams with the case file: {r['url']}"
+    return None
+
+
 def _fallback_diagnosis(text: str) -> str | None:
     m = re.search(r"DIAGNOSIS\s*[:\-]\s*(.+)", text, re.IGNORECASE)
     return m.group(1).strip().strip("*") if m else None
@@ -74,7 +100,7 @@ def _fallback_diagnosis(text: str) -> str | None:
 
 async def run_episode(harness: Harness, case: Case, verbose: bool = False) -> dict:
     cfg = harness.config
-    ep = Episode(case=case, budget=Budget(cfg["max_questions"], cfg["max_requests"]))
+    ep = Episode(case=case, budget=Budget(cfg["max_questions"], cfg["max_requests"], cfg["max_lookups"]))
     staged = harness.stage()
     result_msg: ResultMessage | None = None
     last_text = ""
@@ -113,8 +139,12 @@ async def run_episode(harness: Harness, case: Case, verbose: bool = False) -> di
 
     spoken = " ".join(e.get("answer", "") + " " + e.get("result", "") for e in ep.events)
     leak = mentions(spoken, case.diagnosis, case.aliases)
-    if leak:  # a frozen role gave the answer away: never credit it, and don't pay the judge
-        verdict = {"correct": False, "differential_match": 0, "rationale": "simulator leak", "judge_cost_usd": 0.0}
+    contaminated = contamination(case, ep.events)
+    if contaminated:
+        ep.log("contamination", reason=contaminated)
+    if leak or contaminated:  # the answer came from outside the doctor: never credit it, and don't pay the judge
+        rationale = "simulator leak" if leak else "web contamination"
+        verdict = {"correct": False, "differential_match": 0, "rationale": rationale, "judge_cost_usd": 0.0}
     else:
         verdict = await grade(ep.diagnosis, ep.differential, case.diagnosis, case.aliases)
     return {
@@ -132,7 +162,9 @@ async def run_episode(harness: Harness, case: Case, verbose: bool = False) -> di
         "judge_rationale": verdict["rationale"],
         "questions": ep.questions,
         "requests": ep.requests,
+        "lookups": ep.lookups,
         "leak": leak,
+        "contaminated": bool(contaminated),
         "num_turns": result_msg.num_turns if result_msg else None,
         "duration_s": round(time.time() - ep.started, 1),
         "cost_usd": round(
@@ -149,6 +181,8 @@ def _print_event(e: dict) -> None:
         print(f"  Dr: {e['question']}\n  Pt: {e['answer']}")
     elif k in ("examine", "order_test"):
         print(f"  [{k}] {e['request']}\n    {e['result']}")
+    elif k == "lookup":
+        print(f"  [lookup] {e['query']}\n    " + "\n    ".join(f"{r['title']} ({r['url']})" for r in e["results"]))
     elif k == "submit_diagnosis":
         print(f"  => DIAGNOSIS: {e['diagnosis']}  (ddx: {', '.join(e['differential'])})")
     elif k == "doctor_note":
@@ -188,6 +222,7 @@ class EvalResult:
             "in_top3_differential": sum(1 for r in s if r["correct"] or 1 <= r["differential_match"] <= 2),
             "no_diagnosis": sum(1 for r in s if not r["diagnosis"]),
             "leaks": sum(1 for r in s if r["leak"]),
+            "contaminated": sum(1 for r in s if r.get("contaminated")),
             "mean_questions": mean("questions"),
             "mean_requests": mean("requests"),
             "mean_duration_s": mean("duration_s"),
@@ -226,7 +261,7 @@ async def run_eval(
                         r = {"case_id": case.id, "harness": harness.name, "error": f"{type(e).__name__}: {e}"}
                         if attempt == 1:
                             await asyncio.sleep(5)
-                if "error" not in r and not r["leak"]:  # leaked episodes rerun next time
+                if "error" not in r and not r["leak"] and not r.get("contaminated"):  # these rerun next time
                     cached.write_text(json.dumps(r, indent=1))
         done += 1
         if not quiet:

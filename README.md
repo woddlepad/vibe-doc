@@ -67,6 +67,22 @@ uv run rsi improve --generations 6 --candidates 1 --screen 10 --min-confidence 0
   --train-batch 20 --deadline 23:30
 ```
 
+## Web lookup (Exa)
+
+A harness with `"max_lookups": N` (0-10, default 0) in `config.json` gives the doctor a fifth clinic
+tool, `lookup(query)`: an [Exa](https://exa.ai) search restricted to trusted medical references
+(StatPearls/PubMed, Merck, MedlinePlus, NICE, CDC, ...; `ALLOWED_DOMAINS` in `src/rsi/lookup.py`),
+returning the top 5 results with highlights. It needs `EXA_API_KEY` in `.env`; `eval`, `episode` and
+`improve` refuse to start without it.
+
+- Results are redacted like the patient and examiner (the answer key is never spelled out).
+- An episode is **contaminated**, scored wrong without calling the judge and never cached, if any
+  result comes from outside the allowed domains or shares 3+ distinct word 8-grams with the case file
+  (i.e. the doctor found the vignette itself). `summary.json` counts them under `contaminated`.
+
+The optimizer may turn it on through `config.json`. For a controlled A/B, copy a harness folder,
+set `max_lookups`, and `rsi eval --harness <copy>` both on the same split.
+
 ## Layout
 
 | Path | What |
@@ -74,6 +90,7 @@ uv run rsi improve --generations 6 --candidates 1 --screen 10 --min-confidence 0
 | `harnesses/vNNN/` | One harness version: `system.md`, `lessons.md`, `config.json`, optional `.claude/skills/<name>/SKILL.md` |
 | `harnesses/registry.json` | Every version and rejected candidate, with scores and hypotheses |
 | `src/rsi/clinic.py` | Frozen environment: patient and examiner prompts, the doctor's clinic tools (in-process MCP) |
+| `src/rsi/lookup.py` | Frozen environment: the doctor's Exa web lookup and its domain allowlist |
 | `src/rsi/judge.py` | Frozen grader: exact match, then an LLM judge |
 | `src/rsi/runner.py` | Runs episodes and evals, with traces cached per harness + environment digest in `runs/cache/` |
 | `src/rsi/optimize.py` | Evidence builder, optimizer session, dev gate, registry |
@@ -82,8 +99,8 @@ uv run rsi improve --generations 6 --candidates 1 --screen 10 --min-confidence 0
 
 ## Guardrails against the loop cheating
 
-- The doctor gets only the four clinic tools, plus `Skill`/`TodoWrite` if the harness enables them.
-  File, shell, web and subagent tools are disabled (`permission_mode="dontAsk"`), and its working
+- The doctor gets only the four clinic tools (five with `lookup`, see above), plus `Skill`/`TodoWrite`
+  if the harness enables them. File, shell, built-in web and subagent tools are disabled (`permission_mode="dontAsk"`), and its working
   directory is a temporary copy of the harness.
 - Skills are plain instructions: one `SKILL.md` per skill, frontmatter limited to `name` and
   `description` (no hooks, `allowed-tools`, `model`, ...), no supporting files, no `` !`command` ``.
@@ -97,7 +114,7 @@ uv run rsi improve --generations 6 --candidates 1 --screen 10 --min-confidence 0
 - Promotion is decided on dev cases the optimizer never sees, and only when both the parent and the
   candidate scored every dev case (no errors). `improve` stops if the parent's dev eval has errors.
 - Cached episodes are keyed by the harness digest and an environment digest (role models,
-  `clinic.py`, `judge.py`, case file), so changing the frozen environment invalidates the cache.
+  `clinic.py`, `judge.py`, `lookup.py`, case file), so changing the frozen environment invalidates the cache.
 - Test is scored once with `--final`; `runs/test-final.json` records it and blocks a second run.
 
 ## Models

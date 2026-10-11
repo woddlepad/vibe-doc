@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from datetime import datetime, timedelta
@@ -30,6 +31,11 @@ def parse_deadline(hhmm: str, now: datetime | None = None) -> float:
     except ValueError as e:
         raise argparse.ArgumentTypeError(f"expected HH:MM (24h), got {hhmm!r}") from e
     return (t if t > now else t + timedelta(days=1)).timestamp()
+
+
+def _require_exa(h) -> None:
+    if h.config["max_lookups"] and not os.environ.get("EXA_API_KEY"):
+        sys.exit(f"{h.name} has max_lookups > 0 but EXA_API_KEY is not set (.env)")
 
 
 def cmd_auth(args) -> None:
@@ -70,7 +76,9 @@ def cmd_episode(args) -> None:
     from .runner import run_episode
 
     _warn_if_test(args.case)
-    r = asyncio.run(run_episode(Harness.load(args.harness), all_cases()[args.case], verbose=True))
+    h = Harness.load(args.harness)
+    _require_exa(h)
+    r = asyncio.run(run_episode(h, all_cases()[args.case], verbose=True))
     verdict = "CORRECT" if r["correct"] else "WRONG"
     print(f"\n{verdict}: said {r['diagnosis']!r}, answer {r['gold']!r} ({r['judge_rationale']})")
     print(f"{r['questions']} questions, {r['requests']} exam/test requests, {r['duration_s']}s, ${r['cost_usd']} API-equivalent")
@@ -91,6 +99,7 @@ def cmd_eval(args) -> None:
     problems = h.validate()
     if problems:
         sys.exit(f"invalid harness: {problems}")
+    _require_exa(h)
     ev = asyncio.run(run_eval(h, split_cases(args.split, args.limit), args.label or args.split, args.concurrency, use_cache=not args.no_cache))
     if final and ev.summary()["scored"]:  # any scored test episode spends the split
         lock = {"harness": h.name, "digest": h.digest, "env_digest": ev.env_digest, "timestamp": time.strftime("%F %T"), "run": str(ev.out_dir)}

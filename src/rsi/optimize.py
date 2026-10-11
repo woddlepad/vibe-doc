@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import random
 import shutil
 import subprocess
@@ -66,6 +67,8 @@ def _transcript(r: dict) -> str:
             lines += [f"**Doctor:** {e['question']}", f"**Patient:** {e['answer']}"]
         elif k in ("examine", "order_test"):
             lines.append(f"**[{k}]** {e['request']} → {e['result']}")
+        elif k == "lookup":
+            lines.append(f"**[lookup]** {e['query']} → " + "; ".join(r["title"] for r in e["results"]))
         elif k == "doctor_note":
             lines.append(f"_(doctor's own note)_ {e['text']}")
         elif k == "builtin_tool":
@@ -176,6 +179,10 @@ system prompt, plus the reason for the visit. Its only clinic tools are:
 - `ask_patient(question)`: a simulated patient answers in lay terms, only what is asked
 - `examine(exam)` / `order_test(test)`: returns findings; anything not in the case file comes back normal
 - `submit_diagnosis(diagnosis, differential, reasoning)`: ends the consultation
+- `lookup(query)`: only when `max_lookups` > 0. Searches trusted medical references only
+  (StatPearls, PubMed, Merck, MedlinePlus, ...) and returns top results with highlights. Results are
+  checked against the case file and any match disqualifies the episode, so use it to look up
+  differentials/discriminating features, not to find the case.
 
 Scoring: the single submitted diagnosis must match the answer key (synonyms are fine, a broader
 category is wrong). Cases are USMLE-style vignettes across all specialties.
@@ -185,7 +192,8 @@ category is wrong). Cases are USMLE-style vignettes across all specialties.
 - `harness/system.md`: the doctor's core instructions
 - `harness/lessons.md`: distilled, general lessons from past failures
 - `harness/config.json`: keys {config_keys}. `model` is locked to {model}.
-  Ranges: max_questions 3-40, max_requests 0-30, max_turns 10-150; effort one of low/medium/high/xhigh/max.
+  Ranges: max_questions 3-40, max_requests 0-30, max_turns 10-150, max_lookups 0-10 (needs EXA_API_KEY);
+  effort one of low/medium/high/xhigh/max.
   `builtin_tools` may only contain {whitelist}.
 - `harness/.claude/skills/<name>/SKILL.md`: Claude Code skills the doctor can load on demand
   (frontmatter with only `name` and `description`, then plain instructions). Good for specialty
@@ -300,6 +308,8 @@ def _check_candidate(cand: Harness, parent: Harness, locked_model: str) -> list[
         problems.append(f"system.md + lessons.md is {size} chars (limit {MAX_PROMPT_CHARS})")
     if not diff(parent, cand):
         problems.append("no changes")
+    if cand.config.get("max_lookups") and not os.environ.get("EXA_API_KEY"):
+        problems.append("max_lookups > 0 needs EXA_API_KEY, which is not set")
     return problems
 
 
@@ -366,6 +376,8 @@ async def improve(
     deadline: float | None = None,
 ) -> None:
     reg = load_registry()
+    if Harness.load(reg["best"]).config["max_lookups"] and not os.environ.get("EXA_API_KEY"):
+        sys.exit(f"{reg['best']} has max_lookups > 0 but EXA_API_KEY is not set (.env)")
     dev = split_cases("dev", dev_limit)
     train_all = split_cases("train")
     session = time.strftime("%Y%m%d-%H%M%S")

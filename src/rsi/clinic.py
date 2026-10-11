@@ -5,6 +5,7 @@ Nothing in this file is visible to or editable by the optimizer.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -13,6 +14,7 @@ from typing import Any, Protocol
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from . import lookup as web
 from .cases import Case
 
 PATIENT_SYSTEM = """You are role-playing a patient in a doctor's office. Stay in character.
@@ -49,6 +51,11 @@ CLINIC_TOOLS = ["ask_patient", "examine", "order_test", "submit_diagnosis"]
 TOOL_PREFIX = "mcp__clinic__"
 
 
+def clinic_tool_names(max_lookups: int) -> list[str]:
+    """Full MCP names of the doctor's clinic tools; `lookup` only when the harness has a lookup budget."""
+    return [TOOL_PREFIX + t for t in CLINIC_TOOLS + (["lookup"] if max_lookups > 0 else [])]
+
+
 class Speaker(Protocol):
     async def say(self, text: str) -> str: ...
 
@@ -57,6 +64,7 @@ class Speaker(Protocol):
 class Budget:
     max_questions: int = 15
     max_requests: int = 10  # examine + order_test combined
+    max_lookups: int = 0  # web lookups; 0 means no lookup tool
 
 
 @dataclass
@@ -71,6 +79,7 @@ class Episode:
     reasoning: str = ""
     questions: int = 0
     requests: int = 0
+    lookups: int = 0
     started: float = field(default_factory=time.time)
 
     def log(self, kind: str, **data: Any) -> None:
@@ -148,6 +157,24 @@ def build_clinic_tools(ep: Episode, patient: Speaker, examiner: Speaker) -> list
         return await _request("order_test", args["test"])
 
     @tool(
+        "lookup",
+        "Search trusted medical references (StatPearls/PubMed/Merck/MedlinePlus...). Returns top results with highlights.",
+        {"query": str},
+    )
+    async def lookup(args: dict) -> dict:
+        if (r := closed()) is not None:
+            return r
+        if ep.lookups >= ep.budget.max_lookups:
+            return _text("Lookup budget used up. Continue the consultation without it.")
+        ep.lookups += 1
+        results = await asyncio.to_thread(web.exa_search, args["query"])
+        block = "\n".join(f"- {r['title']} ({r['url']})\n  {r['text']}" for r in results) or "No results."
+        text = redact(block, ep.case)  # titles and urls too: the answer key is never spelled out
+        ep.log("lookup", query=args["query"], results=results, text=text)  # raw results kept for the contamination check
+        left = ep.budget.max_lookups - ep.lookups
+        return _text(f"{text}\n\n[{left} lookups left]")
+
+    @tool(
         "submit_diagnosis",
         "Submit your final diagnosis. This ends the consultation; call it exactly once.",
         {
@@ -173,7 +200,7 @@ def build_clinic_tools(ep: Episode, patient: Speaker, examiner: Speaker) -> list
         ep.log("submit_diagnosis", diagnosis=ep.diagnosis, differential=ep.differential, reasoning=ep.reasoning)
         return _text("Diagnosis recorded. The consultation is over. Do not call any more tools.")
 
-    return [ask_patient, examine, order_test, submit_diagnosis]
+    return [ask_patient, examine, order_test, submit_diagnosis] + ([lookup] if ep.budget.max_lookups > 0 else [])
 
 
 def build_clinic_server(ep: Episode, patient: Speaker, examiner: Speaker):

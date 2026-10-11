@@ -14,7 +14,8 @@ from pathlib import Path
 from .config import HARNESSES
 
 # Built-in Claude Code tools the doctor may be given. File, shell and web tools are never
-# allowed: the doctor must not be able to read case data or look answers up. No subagents either:
+# allowed: the doctor must not be able to read case data or look answers up (the frozen
+# clinic `lookup` tool searches trusted references only and is checked for contamination). No subagents either:
 # they can name their own model, which would break the doctor model lock.
 BUILTIN_WHITELIST = {"Skill", "TodoWrite"}
 CONFIG_DEFAULTS = {
@@ -23,6 +24,7 @@ CONFIG_DEFAULTS = {
     "max_questions": 15,
     "max_requests": 10,
     "max_turns": 60,
+    "max_lookups": 0,
     "builtin_tools": [],
 }
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
@@ -141,7 +143,7 @@ class Harness:
             problems.append(f"model is locked to {locked_model}" if locked_model else "model must be a string")
         if not isinstance(cfg["effort"], str) or cfg["effort"] not in EFFORTS:
             problems.append(f"effort must be one of {sorted(EFFORTS)}")
-        for key, lo, hi in (("max_questions", 3, 40), ("max_requests", 0, 30), ("max_turns", 10, 150)):
+        for key, lo, hi in (("max_questions", 3, 40), ("max_requests", 0, 30), ("max_turns", 10, 150), ("max_lookups", 0, 10)):
             if type(cfg[key]) is not int or not lo <= cfg[key] <= hi:
                 problems.append(f"{key} must be an integer in [{lo}, {hi}]")
         tools = cfg["builtin_tools"]

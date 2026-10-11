@@ -9,7 +9,8 @@ import pytest
 
 from rsi import judge, optimize, runner
 from rsi.cases import all_cases, splits
-from rsi.clinic import Budget, Episode, build_clinic_tools
+from rsi import lookup as web
+from rsi.clinic import REDACTED, Budget, Episode, build_clinic_tools, clinic_tool_names
 from rsi.harness import Harness, diff, is_editable
 from rsi.judge import mentions, normalize, quick_match
 from rsi.optimize import _check_candidate, _failure_md, _guard
@@ -143,6 +144,9 @@ def test_skill_validation(tmp_path):
         ({"builtin_tools": ["Agent"]}, "Agent"),
         ({"max_questions": True}, "max_questions"),
         ({"max_turns": 20.0}, "max_turns"),
+        ({"max_lookups": 11}, "max_lookups"),
+        ({"max_lookups": -1}, "max_lookups"),
+        ({"max_lookups": True}, "max_lookups"),
         ({"effort": ["high"]}, "effort"),
         ({"model": None}, "model"),
         ([], "JSON object"),
@@ -479,3 +483,113 @@ def test_redaction_strips_answer_key_from_frozen_roles():
     c = all_cases()["mqx-000"]  # Myasthenia gravis
     assert redact("Ptosis worsens with upward gaze.", c) == "Ptosis worsens with upward gaze."
     assert "myasthenia" not in redact("AChR antibodies: positive, consistent with Myasthenia Gravis.", c).lower()
+
+
+MG_HISTORY = (  # verbatim from mqx-000's case file
+    "The patient reports a 1-month history of experiencing double vision (diplopia), difficulty in climbing stairs, "
+    "and weakness when trying to brush her hair."
+)
+CLEAN = "Fatigable ptosis and diplopia that improve with rest suggest a disorder of the neuromuscular junction."
+
+
+def _fake_exa(results):
+    calls = []
+
+    def search(query, n=5):
+        calls.append(query)
+        return [dict(r) for r in results]
+
+    return search, calls
+
+
+def test_lookup_tool_only_with_budget_redacted_and_logged_raw(monkeypatch):
+    case = all_cases()["mqx-000"]  # Myasthenia gravis
+    assert clinic_tool_names(0) == [f"mcp__clinic__{t}" for t in ("ask_patient", "examine", "order_test", "submit_diagnosis")]
+    assert clinic_tool_names(2)[-1] == "mcp__clinic__lookup"
+    assert "lookup" not in {t.name for t in build_clinic_tools(Episode(case, Budget()), FakeSpeaker("p"), FakeSpeaker("e"))}
+
+    raw = {"title": "Myasthenia Gravis - StatPearls", "url": "https://www.ncbi.nlm.nih.gov/books/NBK559331/", "text": CLEAN + " Myasthenia gravis is autoimmune."}
+    search, calls = _fake_exa([raw])
+    monkeypatch.setattr(web, "exa_search", search)
+    ep = Episode(case=case, budget=Budget(max_lookups=2))
+    tools = {t.name: t.handler for t in build_clinic_tools(ep, FakeSpeaker("p"), FakeSpeaker("e"))}
+    out = _run(tools["lookup"], {"query": "fatigable ptosis diplopia"})
+    assert "myasthenia" not in out.lower() and REDACTED in out and "ncbi.nlm.nih.gov" in out and "[1 lookups left]" in out
+    assert ep.events[-1]["kind"] == "lookup" and ep.events[-1]["results"] == [raw] and ep.events[-1]["text"] in out
+    assert "[0 lookups left]" in _run(tools["lookup"], {"query": "q2"})
+    assert "budget used up" in _run(tools["lookup"], {"query": "q3"})
+    assert calls == ["fatigable ptosis diplopia", "q2"] and ep.lookups == 2
+    _run(tools["submit_diagnosis"], {"diagnosis": "x"})
+    assert "over" in _run(tools["lookup"], {"query": "q4"})
+
+
+def test_contamination_detector():
+    case = all_cases()["mqx-000"]
+    ev = lambda *results: [{"kind": "ask_patient", "answer": MG_HISTORY}, {"kind": "lookup", "query": "q", "results": list(results)}]  # noqa: E731
+    clean = {"title": "StatPearls", "url": "https://pubmed.ncbi.nlm.nih.gov/123/", "text": CLEAN}
+    assert runner.contamination(case, ev(clean)) is None
+    assert runner.contamination(case, ev({"title": "lookup failed", "url": "", "text": "HTTP Error 401"})) is None
+    assert "disallowed domain" in runner.contamination(case, ev(clean, {"title": "x", "url": "https://medqa-answers.example.com/a", "text": ""}))
+    assert "disallowed domain" in runner.contamination(case, ev({**clean, "url": "https://evilncbi.nlm.nih.gov.attacker.io/"}))
+    copied = {**clean, "text": "Case 12: " + MG_HISTORY.upper() + " Answer below."}
+    assert "8-grams" in runner.contamination(case, ev(copied))
+    # A single stock phrase shared with the case is not a match.
+    assert runner.contamination(case, ev({**clean, "text": "difficulty in climbing stairs, and weakness when trying to"})) is None
+
+
+def test_contaminated_episode_is_wrong_skips_judge_and_is_counted(tmp_path, monkeypatch):
+    tools = {}
+
+    def fake_server(ep, patient, examiner):
+        tools.update({t.name: t.handler for t in build_clinic_tools(ep, patient, examiner)})
+
+    async def fake_query(prompt, options):
+        assert "mcp__clinic__lookup" in options.allowed_tools
+        await tools["lookup"]({"query": "35-year-old double vision climbing stairs"})
+        await tools["submit_diagnosis"]({"diagnosis": "Myasthenia gravis"})
+        return
+        yield
+
+    async def no_judge(*args, **kwargs):
+        raise AssertionError("the judge must not run on a contaminated episode")
+
+    search, _ = _fake_exa([{"title": "USMLE case", "url": "https://www.ncbi.nlm.nih.gov/x", "text": MG_HISTORY}])
+    monkeypatch.setattr(web, "exa_search", search)
+    monkeypatch.setattr(runner, "Persona", FakePersona)
+    monkeypatch.setattr(runner, "build_clinic_server", fake_server)
+    monkeypatch.setattr(runner, "query", fake_query)
+    monkeypatch.setattr(runner, "grade", no_judge)
+    h = _candidate(tmp_path)
+    (h.path / "config.json").write_text(json.dumps(h.config | {"max_lookups": 3}))
+    assert h.validate(locked_model=h.config["model"]) == []
+    r = asyncio.run(runner.run_episode(h, all_cases()["mqx-000"]))
+    assert r["contaminated"] and not r["leak"] and not r["correct"] and r["judge_rationale"] == "web contamination"
+    assert r["lookups"] == 1 and r["events"][-1]["kind"] == "contamination"
+    s = EvalResult("h", "dev", [r, _result("mqx-001")], Path(".")).summary()
+    assert s["contaminated"] == 1 and s["leaks"] == 0
+
+
+def test_exa_search_request_and_errors(monkeypatch):
+    import io
+    import urllib.error
+
+    sent = []
+
+    def fake_urlopen(req, timeout):
+        sent.append((req, timeout))
+        body = {"results": [{"title": "T", "url": "https://medlineplus.gov/a", "highlights": ["one.", "two."]}]}
+        return io.BytesIO(json.dumps(body).encode())
+
+    monkeypatch.setenv("EXA_API_KEY", "k")
+    monkeypatch.setattr(web.urllib.request, "urlopen", fake_urlopen)
+    assert web.exa_search("ptosis") == [{"title": "T", "url": "https://medlineplus.gov/a", "text": "one. two."}]
+    req, timeout = sent[0]
+    body = json.loads(req.data)
+    assert timeout == 20 and req.get_header("X-api-key") == "k" and req.full_url == "https://api.exa.ai/search"
+    assert body["includeDomains"] == web.ALLOWED_DOMAINS and body["numResults"] == 5 and "highlights" in body["contents"]
+
+    def failing(req, timeout):
+        raise urllib.error.URLError("no route")
+
+    monkeypatch.setattr(web.urllib.request, "urlopen", failing)
+    assert web.exa_search("ptosis") == [{"title": "lookup failed", "url": "", "text": "<urlopen error no route>"}]

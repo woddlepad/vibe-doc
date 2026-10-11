@@ -1,5 +1,5 @@
 {
- "best": "v000",
+ "best": "v001",
  "locked_model": "claude-haiku-5-5",
  "versions": [
   {
@@ -10,26 +10,118 @@
    "dev": {
     "harness": "v000",
     "label": "dev",
-    "env_digest": "5c6e181c923c",
+    "env_digest": "744e7905c8d1",
     "n": 40,
     "scored": 40,
     "errors": 0,
-    "correct": 27,
-    "accuracy": 0.675,
+    "correct": 31,
+    "accuracy": 0.775,
     "ci95": [
-     0.5202,
-     0.7992
+     0.625,
+     0.8768
     ],
-    "in_top3_differential": 29,
+    "in_top3_differential": 33,
     "no_diagnosis": 0,
-    "leaks": 6,
-    "mean_questions": 3.55,
-    "mean_requests": 4.67,
-    "mean_duration_s": 32.27,
+    "leaks": 0,
+    "mean_questions": 4.0,
+    "mean_requests": 4.65,
+    "mean_duration_s": 37.3,
     "total_cost_usd": 0.47,
-    "run": "runs/evals/20261011-222443-v000-dev"
+    "run": "runs/evals/20261011-223538-v000-dev"
+   }
+  },
+  {
+   "name": "v001",
+   "parent": "v000",
+   "created": "2026-10-11 23:18:37",
+   "hypothesis": "The training batch had only one wrong case (mqx-071), so this is a single example, not a measured pattern. The failure has a reasoning cause that will likely recur on other cases. The doctor got an abnormal objective finding (decreased hearing in both ears on exam) and dropped it because the patient said his hearing was fine. It submitted the close sibling diagnosis (vestibular neuritis) instead of labyrinthitis, which explains every finding. It also spent 3 of its 5 requests asking again for exam details it had already been told were 'not in the record', and never ordered audiometry, which would have settled it. In this setup, anything not in the case file comes back normal, so every abnormal result was put there on purpose and usually decides the answer. Fix: tell the doctor that abnormal findings are deliberate clues, and add a check it must do before submitting. The diagnosis must explain every abnormal finding. Objective findings beat the patient's own denials. Sibling diagnoses are decided by the feature that tells them apart. A 'not in the record' reply should not be re-requested; use the budget on a test that confirms the diagnosis instead.",
+   "changes": [
+    "harness/system.md: added a 'How findings work' section. Abnormal findings are deliberate clues, and a 'not in the record' reply should not be re-requested in other words.",
+    "harness/system.md: added a mandatory pre-submit check. List all abnormal findings; the diagnosis must explain all of them; trust objective findings over the patient's own denials; pick the most specific diagnosis, using the feature that separates close siblings.",
+    "harness/lessons.md (was empty): three short general lessons. Build the diagnosis around a finding that conflicts with the patient's denial (neuritis vs labyrinthitis given as an example of the pattern). Before submitting, name the closest sibling diagnosis and check the finding that separates them. Spend leftover budget on tests that confirm the diagnosis rather than repeating requests for missing details."
+   ],
+   "confidence": 0.919,
+   "paired_n": 40,
+   "gain": 3,
+   "diff": "runs/improve/20261011-223538/gen1-cand3/diff.patch",
+   "dev": {
+    "harness": "cand-gen1-cand3",
+    "label": "dev",
+    "env_digest": "744e7905c8d1",
+    "n": 40,
+    "scored": 40,
+    "errors": 0,
+    "correct": 34,
+    "accuracy": 0.85,
+    "ci95": [
+     0.7093,
+     0.9294
+    ],
+    "in_top3_differential": 37,
+    "no_diagnosis": 0,
+    "leaks": 0,
+    "mean_questions": 2.95,
+    "mean_requests": 4.72,
+    "mean_duration_s": 47.77,
+    "total_cost_usd": 0.45,
+    "run": "runs/evals/20261011-230417-cand-gen1-cand3-dev"
    }
   }
  ],
- "rejected": []
+ "rejected": [
+  {
+   "id": "20261011-223538/gen1-cand1",
+   "parent": "v000",
+   "hypothesis": "The one train failure (mqx-071) came from a reasoning mistake that could recur, not from missing knowledge. The neuro exam came back with an abnormal objective finding (bilateral decreased hearing). The patient said his hearing hadn't changed, and the doctor trusted that over the exam. It never ordered audiometry to settle the conflict. It then submitted a closely related diagnosis that leaves that finding unexplained (vestibular neuritis instead of labyrinthitis), even though its own notes flagged the gap. It also used 2 of its 5 requests re-asking for exam details the record had already said were unavailable. These cases are vignettes, so abnormal findings are planted on purpose to separate neighbouring diagnoses. A required pre-submit check should catch this on unseen cases in any specialty: list every abnormal finding, make sure the diagnosis explains all of them, trust objective findings over the patient's impression and confirm with the matching test, and pick explicitly between near-identical diagnoses. Caveat: this rests on a single failure (19/20 on train). The earlier dev score of 0.775 suggests held-out cases fail for other reasons this batch doesn't show.",
+   "changes": [
+    "harness/system.md: added a short step-by-step workflow (history \u2192 exams/tests that tell the leading diagnoses apart \u2192 stop re-requesting anything marked 'not in the record') and a required 'Findings check' before submit_diagnosis. The check says: every abnormal finding is a clue and the diagnosis must explain all of them; objective findings outrank the patient's self-report and should be confirmed by the matching test; decide explicitly which feature separates two close diagnoses; submit the most specific diagnosis, not a broad category.",
+    "harness/lessons.md: added two general lessons. Don't explain away an objective deficit the patient denies; confirm it with a test and let it decide between neighbouring diagnoses. Don't re-request details the record says are unavailable.",
+    "config.json unchanged."
+   ],
+   "dev_accuracy": 0.775,
+   "parent_dev_accuracy": 0.775,
+   "confidence": 0.5,
+   "paired_n": 40,
+   "gain": 0,
+   "diff": "runs/improve/20261011-223538/gen1-cand1/diff.patch",
+   "screen": {
+    "n": 10,
+    "parent": 7,
+    "candidate": 6
+   },
+   "reason": "not clearly better: +0 correct (need +1), P(better)=0.50 (need 0.75)"
+  },
+  {
+   "id": "20261011-223538/gen1-cand2",
+   "parent": "v000",
+   "hypothesis": "The training batch had one failure (mqx-071), out of 20 cases. That's too little evidence to prove a pattern, but it shows a general weakness. The doctor trusted the patient's lay self-report (\"my hearing hasn't changed\") over an objective exam finding (bilateral decreased hearing). It used three exam requests asking the record for HINTS details that weren't there instead of ordering the test that would settle the question (audiometry). It then submitted a closely related diagnosis (vestibular neuritis) that the abnormal finding ruled out, and listed the conflict as an unresolved 'gap'. USMLE-style vignettes often hinge on a single objective feature that separates two related diagnoses, so the doctor should treat exam and test results as ground truth. It should run a pre-submission check that the chosen diagnosis explains every abnormal finding. When a conflict remains, it should spend a request on the test that settles it rather than re-asking for missing record details.",
+   "screen": {
+    "n": 10,
+    "parent": 7,
+    "candidate": 5
+   },
+   "reason": "screened out: 5/10 vs parent 7/10"
+  },
+  {
+   "id": "20261011-223538/gen1-cand4",
+   "parent": "v000",
+   "hypothesis": "The only training failure was a single case, so the evidence for this is thin. In that case (mqx-071) the doctor found the deciding sign itself: bilateral decreased hearing on the cranial nerve exam. It then threw the finding away because the patient said his hearing hadn't changed, and noted it only as an unresolved gap. It also never ordered audiometry, which was in the case file. On top of that it kept re-requesting HINTS exam parts the record said weren't there, and settled on the more common neighbouring diagnosis (vestibular neuritis) instead of the one that explains every finding (labyrinthitis). The general failure is submitting a diagnosis that leaves an abnormal objective finding unexplained, especially when the patient's lay report contradicts it, and when the alternative is a close variant that differs by exactly that feature. This likely also accounts for some dev-set misses I can't see (baseline dev accuracy 0.775), since many USMLE pairs are separated by a single finding. The fix is a pre-submission check: every abnormal finding must be accounted for, objective findings beat the patient's report, pick between near-twin diagnoses on the separating feature, and name the specific disease.",
+   "changes": [
+    "harness/lessons.md (was empty): added short general lessons. (1) The final diagnosis must explain every abnormal finding; settle discrepancies with an objective test rather than listing them as gaps. (2) Exam and test findings beat the patient's lay self-report. (3) Pick between closely related diagnosis pairs using the one feature that separates them, and look for that feature on purpose. (4) Stop re-requesting exams or tests the record doesn't have, and order the simple test aimed at the organ involved early. (5) Name the specific disease, not a category, and put only one condition in the diagnosis field.",
+    "harness/system.md: added a three-point check to run before submit_diagnosis (do all abnormal findings fit, is there a near-twin diagnosis, is the name specific enough). config.json is unchanged."
+   ],
+   "dev_accuracy": 0.825,
+   "parent_dev_accuracy": 0.775,
+   "confidence": 0.832,
+   "paired_n": 40,
+   "gain": 2,
+   "diff": "runs/improve/20261011-223538/gen1-cand4/diff.patch",
+   "screen": {
+    "n": 10,
+    "parent": 7,
+    "candidate": 8
+   },
+   "reason": "another candidate scored higher"
+  }
+ ]
 }

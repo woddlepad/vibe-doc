@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import shutil
 import sys
 import time
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 from claude_agent_sdk import (
@@ -20,9 +22,9 @@ from claude_agent_sdk import (
     query,
 )
 
-from .cases import Case
+from .cases import SOURCE, Case
 from .clinic import CLINIC_TOOLS, TOOL_PREFIX, Budget, Episode, build_clinic_server, examiner_system, patient_system
-from .config import EXAMINER_MODEL, PATIENT_MODEL, RUNS
+from .config import EXAMINER_MODEL, JUDGE_MODEL, PATIENT_MODEL, RUNS
 from .harness import Harness
 from .judge import grade, mentions
 from .llm import Persona
@@ -30,6 +32,17 @@ from .stats import wilson
 
 CACHE = RUNS / "cache"
 EPISODE_TIMEOUT_S = 20 * 60
+
+
+@cache
+def env_digest() -> str:
+    """Identity of the frozen environment: role models, simulator and grader code, case data."""
+    here = Path(__file__).parent
+    h = hashlib.sha256()
+    for part in (PATIENT_MODEL, EXAMINER_MODEL, JUDGE_MODEL, (here / "clinic.py").read_text(), (here / "judge.py").read_text()):
+        h.update(part.encode() + b"\0")
+    h.update(hashlib.sha256(SOURCE.read_bytes()).hexdigest().encode())
+    return h.hexdigest()[:12]
 
 
 def _doctor_options(harness: Harness, staged: Path, server) -> ClaudeAgentOptions:
@@ -47,7 +60,7 @@ def _doctor_options(harness: Harness, staged: Path, server) -> ClaudeAgentOption
         allowed_tools=clinic + builtins,
         mcp_servers={"clinic": server},
         strict_mcp_config=True,
-        setting_sources=["project"],  # loads .claude/skills and .claude/agents from the staged harness
+        setting_sources=["project"],  # loads .claude/skills from the staged harness
         skills="all" if harness.has_skills else [],
         permission_mode="dontAsk",  # anything not explicitly allowed is denied
         cwd=staged,
@@ -98,12 +111,17 @@ async def run_episode(harness: Harness, case: Case, verbose: bool = False) -> di
         if ep.diagnosis:
             ep.log("fallback_diagnosis", diagnosis=ep.diagnosis)
 
-    verdict = await grade(ep.diagnosis, ep.differential, case.diagnosis, case.aliases)
     spoken = " ".join(e.get("answer", "") + " " + e.get("result", "") for e in ep.events)
+    leak = mentions(spoken, case.diagnosis)
+    if leak:  # a frozen role gave the answer away: never credit it, and don't pay the judge
+        verdict = {"correct": False, "differential_match": 0, "rationale": "simulator leak", "judge_cost_usd": 0.0}
+    else:
+        verdict = await grade(ep.diagnosis, ep.differential, case.diagnosis, case.aliases)
     return {
         "case_id": case.id,
         "harness": harness.name,
         "digest": harness.digest,
+        "env_digest": env_digest(),
         "gold": case.diagnosis,
         "diagnosis": ep.diagnosis,
         "differential": ep.differential,
@@ -114,7 +132,7 @@ async def run_episode(harness: Harness, case: Case, verbose: bool = False) -> di
         "judge_rationale": verdict["rationale"],
         "questions": ep.questions,
         "requests": ep.requests,
-        "leak": mentions(spoken, case.diagnosis),
+        "leak": leak,
         "num_turns": result_msg.num_turns if result_msg else None,
         "duration_s": round(time.time() - ep.started, 1),
         "cost_usd": round(
@@ -143,6 +161,7 @@ class EvalResult:
     label: str
     results: list[dict]
     out_dir: Path
+    env_digest: str = ""
 
     @property
     def scored(self) -> list[dict]:
@@ -159,6 +178,7 @@ class EvalResult:
         return {
             "harness": self.harness,
             "label": self.label,
+            "env_digest": self.env_digest,
             "n": len(self.results),
             "scored": len(s),
             "errors": len(self.results) - len(s),
@@ -183,8 +203,9 @@ async def run_eval(
     use_cache: bool = True,
     quiet: bool = False,
 ) -> EvalResult:
-    """Run every case once (reusing cached episodes for an identical harness) and save the results."""
-    cache_dir = CACHE / harness.digest
+    """Run every case once (reusing cached episodes for an identical harness and environment) and save the results."""
+    env = env_digest()
+    cache_dir = CACHE / f"{harness.digest}-{env}"
     cache_dir.mkdir(parents=True, exist_ok=True)
     sem = asyncio.Semaphore(concurrency)
     done = 0
@@ -205,7 +226,7 @@ async def run_eval(
                         r = {"case_id": case.id, "harness": harness.name, "error": f"{type(e).__name__}: {e}"}
                         if attempt == 1:
                             await asyncio.sleep(5)
-                if "error" not in r:
+                if "error" not in r and not r["leak"]:  # leaked episodes rerun next time
                     cached.write_text(json.dumps(r, indent=1))
         done += 1
         if not quiet:
@@ -218,7 +239,7 @@ async def run_eval(
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_dir = RUNS / "evals" / f"{stamp}-{harness.name}-{label}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    ev = EvalResult(harness=harness.name, label=label, results=list(results), out_dir=out_dir)
+    ev = EvalResult(harness=harness.name, label=label, results=list(results), out_dir=out_dir, env_digest=env)
     with (out_dir / "results.jsonl").open("w") as f:
         for r in results:
             f.write(json.dumps(r) + "\n")

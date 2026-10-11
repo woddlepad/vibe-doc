@@ -11,16 +11,6 @@ HARNESSES = ROOT / "harnesses"
 RUNS = ROOT / "runs"
 REGISTRY = HARNESSES / "registry.json"
 
-# Frozen roles. The optimizer never sees or edits these.
-PATIENT_MODEL = os.environ.get("RSI_PATIENT_MODEL", "claude-haiku-5-5")
-EXAMINER_MODEL = os.environ.get("RSI_EXAMINER_MODEL", "claude-haiku-5-5")
-JUDGE_MODEL = os.environ.get("RSI_JUDGE_MODEL", "claude-sonnet-5-5")
-# The meta-agent that rewrites the doctor harness.
-OPTIMIZER_MODEL = os.environ.get("RSI_OPTIMIZER_MODEL", "claude-opus-5-5")
-
-# Variables set by a parent Claude Code session that must not leak into ours.
-_KEEP = {"CLAUDE_CODE_OAUTH_TOKEN"}
-
 
 def load_dotenv(path: Path = ROOT / ".env") -> None:
     if not path.exists():
@@ -33,9 +23,22 @@ def load_dotenv(path: Path = ROOT / ".env") -> None:
         os.environ[key.strip()] = value.strip().strip("'\"")
 
 
+# Before the model constants below, so RSI_*_MODEL overrides in .env take effect.
+load_dotenv()
+
+# Frozen roles. The optimizer never sees or edits these.
+PATIENT_MODEL = os.environ.get("RSI_PATIENT_MODEL", "claude-haiku-5-5")
+EXAMINER_MODEL = os.environ.get("RSI_EXAMINER_MODEL", "claude-haiku-5-5")
+JUDGE_MODEL = os.environ.get("RSI_JUDGE_MODEL", "claude-sonnet-5-5")
+# The meta-agent that rewrites the doctor harness.
+OPTIMIZER_MODEL = os.environ.get("RSI_OPTIMIZER_MODEL", "claude-opus-5-5")
+
+# Variables set by a parent Claude Code session that must not leak into ours.
+_KEEP = {"CLAUDE_CODE_OAUTH_TOKEN"}
+
+
 def prepare_environment() -> None:
-    """Load .env and scrub inherited state so Claude Code uses the subscription token."""
-    load_dotenv()
+    """Scrub inherited state so Claude Code uses the subscription token (.env is loaded at import)."""
     for key in list(os.environ):
         if key in _KEEP:
             continue

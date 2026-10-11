@@ -186,9 +186,8 @@ category is wrong). Cases are USMLE-style vignettes across all specialties.
   Ranges: max_questions 3-40, max_requests 0-30, max_turns 10-150; effort one of low/medium/high/xhigh/max.
   `builtin_tools` may only contain {whitelist}.
 - `harness/.claude/skills/<name>/SKILL.md`: Claude Code skills the doctor can load on demand
-  (YAML frontmatter with `name` and `description`, then instructions). Good for specialty workups.
-- `harness/.claude/agents/<name>.md`: Claude Code subagents (frontmatter `name`, `description`,
-  optional `tools`). They only work if "Agent" is in `builtin_tools`.
+  (frontmatter with only `name` and `description`, then plain instructions). Good for specialty
+  workups. One SKILL.md per skill folder and no other files; other frontmatter keys are rejected.
 
 Keep system.md + lessons.md under {max_chars} characters total.
 
@@ -217,6 +216,9 @@ RESULT_SCHEMA = {
 }
 
 
+_PAYLOAD_KEYS = {"content", "old_string", "new_string"}  # file text, not paths
+
+
 def _guard(ws: Path):
     """PreToolUse hook: reads stay inside the workspace, writes stay inside editable harness files."""
     ws = ws.resolve()
@@ -225,17 +227,26 @@ def _guard(ws: Path):
     def deny(reason: str) -> dict:
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}
 
+    def resolve(raw: str) -> Path:
+        p = Path(raw)
+        return (p if p.is_absolute() else ws / p).resolve()
+
     async def hook(input_data: dict, tool_use_id, context) -> dict:
         name = input_data.get("tool_name", "")
         args = input_data.get("tool_input", {}) or {}
-        raw = args.get("file_path") or args.get("path") or str(ws)
-        p = Path(raw)
-        p = (p if p.is_absolute() else ws / p).resolve()
+        p = resolve(args.get("file_path") or args.get("path") or str(ws))
         if not p.is_relative_to(ws):
             return deny(f"{p} is outside the workspace {ws}")
+        for key in ("pattern", "glob") if name == "Glob" else ("glob",):
+            g = args.get(key)
+            if isinstance(g, str) and (g.startswith(("/", "~")) or ".." in g.replace("\\", "/").split("/")):
+                return deny(f"{key} must be relative and stay inside the workspace {ws}")
+        for key, v in args.items():
+            if key not in _PAYLOAD_KEYS and isinstance(v, str) and v.startswith("/") and not resolve(v).is_relative_to(ws):
+                return deny(f"{v} is outside the workspace {ws}")
         if name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
             if not p.is_relative_to(harness_dir) or not is_editable(p.relative_to(harness_dir).as_posix()):
-                return deny("You may only edit harness/system.md, harness/lessons.md, harness/config.json, harness/.claude/skills/** and harness/.claude/agents/**")
+                return deny("You may only edit harness/system.md, harness/lessons.md, harness/config.json and harness/.claude/skills/<name>/SKILL.md")
         return {}
 
     return hook
@@ -322,6 +333,12 @@ async def improve(
 
         parent_dev = await run_eval(parent, dev, "dev", concurrency)
         record_eval(reg, parent.name, parent_dev, "dev")
+        ps = parent_dev.summary()
+        if ps["errors"] or not ps["scored"]:
+            raise SystemExit(
+                f"{parent.name} dev eval incomplete: {ps['errors']} errors, {ps['scored']} scored "
+                f"(see {parent_dev.out_dir}). Fix the cause and rerun; finished episodes are cached."
+            )
         rng = random.Random(f"{session}:{gen}")
         batch = rng.sample(train_all, min(train_batch, len(train_all)))
         train = await run_eval(parent, batch, f"train-g{gen}", concurrency)
@@ -345,18 +362,29 @@ async def improve(
                 reg["rejected"].append({"id": cid, "parent": parent.name, "reason": f"optimizer error: {prop}"})
                 save_registry(reg)
                 continue
-            (ws / "proposal.json").write_text(json.dumps(prop, indent=1))
-            cand = Harness(name=f"cand-{ws.name}", path=ws / "harness")
-            (ws / "diff.patch").write_text(diff(parent, cand))
-            _log(f"{ws.name}: {prop['hypothesis'][:300]}")
-            problems = _check_candidate(cand, parent, reg["locked_model"])
+            base = {"id": cid, "parent": parent.name, "hypothesis": prop.get("hypothesis", "")}
+            try:  # one malformed candidate must not sink the generation
+                (ws / "proposal.json").write_text(json.dumps(prop, indent=1))
+                cand = Harness(name=f"cand-{ws.name}", path=ws / "harness")
+                (ws / "diff.patch").write_text(diff(parent, cand))
+                _log(f"{ws.name}: {base['hypothesis'][:300]}")
+                problems = _check_candidate(cand, parent, reg["locked_model"])
+                cand_dev = None if problems else await run_eval(cand, dev, "dev", concurrency)
+            except Exception as e:  # noqa: BLE001
+                problems = [f"candidate error: {type(e).__name__}: {e}"]
             if problems:
-                reg["rejected"].append({"id": cid, "parent": parent.name, "hypothesis": prop["hypothesis"], "reason": "invalid: " + "; ".join(problems)})
+                reg["rejected"].append(base | {"reason": "invalid: " + "; ".join(problems)})
                 save_registry(reg)
                 _log(f"{ws.name} rejected: {problems}")
                 continue
+            # Compare on the full dev set only: a survivor subset would reward failing on hard cases.
+            n_errors = parent_dev.summary()["errors"] + cand_dev.summary()["errors"]
+            if n_errors:
+                reg["rejected"].append(base | {"reason": f"eval incomplete: {n_errors} errors"})
+                save_registry(reg)
+                _log(f"{ws.name} rejected: eval incomplete, {n_errors} errors")
+                continue
 
-            cand_dev = await run_eval(cand, dev, "dev", concurrency)
             a, b = parent_dev.outcomes(), cand_dev.outcomes()
             shared = sorted(set(a) & set(b))
             pa, pb = [a[i] for i in shared], [b[i] for i in shared]
@@ -365,11 +393,12 @@ async def improve(
             entry = {
                 "id": cid,
                 "parent": parent.name,
-                "hypothesis": prop["hypothesis"],
+                "hypothesis": base["hypothesis"],
                 "changes": prop.get("changes", []),
                 "dev_accuracy": round(acc_b, 4),
                 "parent_dev_accuracy": round(acc_a, 4),
                 "confidence": round(conf, 3),
+                "paired_n": len(shared),
                 "diff": str((ws / "diff.patch").relative_to(ROOT)),
             }
             _log(f"{ws.name}: dev {acc_a:.0%} -> {acc_b:.0%} on {len(shared)} paired cases, P(better)={conf:.2f}")
@@ -399,6 +428,7 @@ async def improve(
                 "hypothesis": entry["hypothesis"],
                 "changes": entry["changes"],
                 "confidence": entry["confidence"],
+                "paired_n": entry["paired_n"],
                 "diff": entry["diff"],
                 "dev": cand_dev.summary() | {"run": str(cand_dev.out_dir.relative_to(ROOT))},
             }

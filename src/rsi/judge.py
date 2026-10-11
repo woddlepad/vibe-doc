@@ -28,25 +28,36 @@ JUDGE_SCHEMA = {
 }
 
 
+MULTI_ANSWER = re.compile(r"\s(or|vs\.?|versus)\s|[/;]", re.IGNORECASE)  # "A or B", "A/B", "A; B"
+
+
 def normalize(s: str) -> str:
     s = s.lower().replace("'s", "")
-    s = re.sub(r"\([^)]*\)", " ", s)
     s = re.sub(r"[^a-z0-9 ]+", " ", s)
     return " ".join(s.split())
 
 
+def answer_keys(gold: str, aliases: tuple[str, ...] = ()) -> set[str]:
+    """Normalized forms of the answer key, with and without its own parentheticals."""
+    return {normalize(k) for g in (gold, *aliases) for k in (g, re.sub(r"\([^)]*\)", " ", g))}
+
+
 def quick_match(pred: str | None, gold: str, aliases: tuple[str, ...] = ()) -> bool | None:
-    """True on an exact normalized match, None when an LLM has to decide."""
+    """True on an exact normalized match, None when an LLM has to decide.
+
+    Only the answer key's own parentheticals are dropped, never the prediction's: "MG (ruled out)"
+    must not match "MG". Multi-answer predictions always go to the LLM judge."""
     if not pred:
         return False
-    p = normalize(pred)
-    return True if any(p == normalize(g) for g in (gold, *aliases)) else None
+    if MULTI_ANSWER.search(pred):
+        return None
+    return True if normalize(pred) in answer_keys(gold, aliases) else None
 
 
 def mentions(text: str, gold: str) -> bool:
     """Leak check: did a frozen role say the answer out loud?"""
-    g = normalize(gold)
-    return len(g) >= 5 and g in normalize(text)
+    t = normalize(text)
+    return any(len(g) >= 5 and g in t for g in answer_keys(gold))
 
 
 async def grade(pred: str | None, differential: list[str], gold: str, aliases: tuple[str, ...] = ()) -> dict:

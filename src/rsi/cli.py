@@ -6,8 +6,18 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 
-from .config import prepare_environment
+from .config import RUNS, prepare_environment
+
+TEST_LOCK = RUNS / "test-final.json"
+
+
+def _warn_if_test(case_id: str) -> None:
+    from .cases import splits
+
+    if case_id in splits()["test"]:
+        print(f"warning: {case_id} is in the locked test split; looking at it taints the final score", file=sys.stderr)
 
 
 def cmd_auth(args) -> None:
@@ -37,6 +47,7 @@ def cmd_cases(args) -> None:
     cases = all_cases()
     print(f"{len(cases)} cases: " + ", ".join(f"{k} {len(v)}" for k, v in s.items()))
     if args.show:
+        _warn_if_test(args.show)
         c = cases[args.show]
         print(json.dumps(c.__dict__, indent=1))
 
@@ -46,6 +57,7 @@ def cmd_episode(args) -> None:
     from .harness import Harness
     from .runner import run_episode
 
+    _warn_if_test(args.case)
     r = asyncio.run(run_episode(Harness.load(args.harness), all_cases()[args.case], verbose=True))
     verdict = "CORRECT" if r["correct"] else "WRONG"
     print(f"\n{verdict}: said {r['diagnosis']!r}, answer {r['gold']!r} ({r['judge_rationale']})")
@@ -58,13 +70,19 @@ def cmd_eval(args) -> None:
     from .optimize import load_registry, record_eval
     from .runner import run_eval
 
-    if args.split == "test" and not args.final:
+    final = args.split == "test"
+    if final and not args.final:
         sys.exit("The test split is locked. Score it once at the end with --final.")
+    if final and TEST_LOCK.exists():
+        sys.exit(f"The test split was already scored once:\n{TEST_LOCK.read_text()}")
     h = Harness.load(args.harness or load_registry()["best"])
     problems = h.validate()
     if problems:
         sys.exit(f"invalid harness: {problems}")
     ev = asyncio.run(run_eval(h, split_cases(args.split, args.limit), args.split, args.concurrency, use_cache=not args.no_cache))
+    if final and ev.summary()["scored"]:  # any scored test episode spends the split
+        lock = {"harness": h.name, "digest": h.digest, "env_digest": ev.env_digest, "timestamp": time.strftime("%F %T"), "run": str(ev.out_dir)}
+        TEST_LOCK.write_text(json.dumps(lock, indent=1) + "\n")
     print(json.dumps(ev.summary(), indent=1))
     print(f"saved to {ev.out_dir}")
     if args.limit is None and args.split in ("dev", "test"):
@@ -112,7 +130,7 @@ def main() -> None:
 
     s = sub.add_parser("episode", help="run one consultation and print it")
     s.add_argument("--harness", default="v000")
-    s.add_argument("--case", default="mqx-000")
+    s.add_argument("--case", default="mqx-001")
     s.set_defaults(fn=cmd_episode)
 
     s = sub.add_parser("eval", help="score a harness on a split")

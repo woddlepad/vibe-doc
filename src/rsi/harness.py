@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -13,8 +14,9 @@ from pathlib import Path
 from .config import HARNESSES
 
 # Built-in Claude Code tools the doctor may be given. File, shell and web tools are never
-# allowed: the doctor must not be able to read case data or look answers up.
-BUILTIN_WHITELIST = {"Skill", "Agent", "Task", "TodoWrite"}
+# allowed: the doctor must not be able to read case data or look answers up. No subagents either:
+# they can name their own model, which would break the doctor model lock.
+BUILTIN_WHITELIST = {"Skill", "TodoWrite"}
 CONFIG_DEFAULTS = {
     "model": "claude-haiku-5-5",
     "effort": "medium",
@@ -26,7 +28,10 @@ CONFIG_DEFAULTS = {
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 # Paths the optimizer may create or edit, relative to the harness folder.
 EDITABLE_FILES = {"system.md", "lessons.md", "config.json"}
-EDITABLE_DIRS = (".claude/skills/", ".claude/agents/")
+EDITABLE_DIRS = (".claude/skills/",)
+# Skills are one SKILL.md each with plain-text frontmatter; hooks, allowed-tools, model etc. are executable.
+SKILL_FILE = re.compile(r"\.claude/skills/[A-Za-z0-9_-]+/SKILL\.md")
+SKILL_KEYS = {"name", "description"}
 
 
 class HarnessError(ValueError):
@@ -35,7 +40,27 @@ class HarnessError(ValueError):
 
 def is_editable(rel: str) -> bool:
     rel = rel.replace("\\", "/")
-    return ".." not in rel.split("/") and (rel in EDITABLE_FILES or rel.startswith(EDITABLE_DIRS))
+    if ".." in rel.split("/"):
+        return False
+    return rel in EDITABLE_FILES or (rel.startswith(EDITABLE_DIRS) and SKILL_FILE.fullmatch(rel) is not None)
+
+
+def skill_problems(text: str) -> list[str]:
+    """Frontmatter may hold only `name` and `description`; the body may not run commands."""
+    lines = text.splitlines()
+    fences = [i for i, line in enumerate(lines) if line.strip() == "---"]
+    if len(fences) < 2 or fences[0] != 0:
+        return ["missing --- frontmatter ---"]
+    problems = []
+    for line in lines[1 : fences[1]]:
+        if not line.strip() or line[0] in " \t#":
+            continue  # blank, comment or continuation of a multi-line value
+        key = line.split(":", 1)[0].strip() if ":" in line else line.strip()
+        if key not in SKILL_KEYS:
+            problems.append(f"frontmatter key not allowed: {key!r} (allowed: {sorted(SKILL_KEYS)})")
+    if "!`" in text:
+        problems.append("dynamic !`command` not allowed")
+    return problems
 
 
 @dataclass(frozen=True)
@@ -88,25 +113,33 @@ class Harness:
     def validate(self, locked_model: str | None = None) -> list[str]:
         """Return a list of problems; empty means the harness is runnable."""
         problems = []
-        for rel in self.files():
+        for rel, text in self.files().items():
             if not is_editable(rel):
                 problems.append(f"unexpected file: {rel}")
+            elif rel.startswith(EDITABLE_DIRS):
+                problems += [f"{rel}: {p}" for p in skill_problems(text)]
+        f = self.path / "config.json"
         try:
-            cfg = self.config
+            raw = json.loads(f.read_text()) if f.exists() else {}
         except json.JSONDecodeError as e:
             return problems + [f"config.json is not valid JSON: {e}"]
+        if not isinstance(raw, dict):
+            return problems + ["config.json must be a JSON object"]
+        cfg = CONFIG_DEFAULTS | raw
         unknown = set(cfg) - set(CONFIG_DEFAULTS)
         if unknown:
             problems.append(f"unknown config keys: {sorted(unknown)}")
-        if locked_model and cfg["model"] != locked_model:
-            problems.append(f"model is locked to {locked_model}")
-        if cfg["effort"] not in EFFORTS:
+        if not isinstance(cfg["model"], str) or (locked_model and cfg["model"] != locked_model):
+            problems.append(f"model is locked to {locked_model}" if locked_model else "model must be a string")
+        if not isinstance(cfg["effort"], str) or cfg["effort"] not in EFFORTS:
             problems.append(f"effort must be one of {sorted(EFFORTS)}")
         for key, lo, hi in (("max_questions", 3, 40), ("max_requests", 0, 30), ("max_turns", 10, 150)):
-            if not isinstance(cfg[key], int) or not lo <= cfg[key] <= hi:
+            if type(cfg[key]) is not int or not lo <= cfg[key] <= hi:
                 problems.append(f"{key} must be an integer in [{lo}, {hi}]")
-        bad = set(cfg["builtin_tools"]) - BUILTIN_WHITELIST
-        if bad:
+        tools = cfg["builtin_tools"]
+        if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
+            problems.append("builtin_tools must be a list of strings")
+        elif bad := set(tools) - BUILTIN_WHITELIST:
             problems.append(f"builtin_tools not allowed: {sorted(bad)} (allowed: {sorted(BUILTIN_WHITELIST)})")
         if not (self.path / "system.md").read_text().strip():
             problems.append("system.md is empty")

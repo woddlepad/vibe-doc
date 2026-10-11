@@ -1,0 +1,21 @@
+{
+ "harness": "cand-gen1-cand2",
+ "label": "screen",
+ "env_digest": "744e7905c8d1",
+ "n": 10,
+ "scored": 10,
+ "errors": 0,
+ "correct": 5,
+ "accuracy": 0.5,
+ "ci95": [
+  0.2366,
+  0.7634
+ ],
+ "in_top3_differential": 9,
+ "no_diagnosis": 0,
+ "leaks": 0,
+ "mean_questions": 3.1,
+ "mean_requests": 4.4,
+ "mean_duration_s": 36.97,
+ "total_cost_usd": 0.11
+}

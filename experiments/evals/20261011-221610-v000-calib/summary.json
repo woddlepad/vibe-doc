@@ -1,0 +1,21 @@
+{
+ "harness": "v000",
+ "label": "calib",
+ "env_digest": "36a538dfdb9b",
+ "n": 2,
+ "scored": 2,
+ "errors": 0,
+ "correct": 0,
+ "accuracy": 0.0,
+ "ci95": [
+  0.0,
+  0.6576
+ ],
+ "in_top3_differential": 0,
+ "no_diagnosis": 0,
+ "leaks": 0,
+ "mean_questions": 4.0,
+ "mean_requests": 4.0,
+ "mean_duration_s": 28.75,
+ "total_cost_usd": 0.02
+}

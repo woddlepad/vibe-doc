@@ -1,0 +1,21 @@
+{
+ "harness": "v000",
+ "label": "dev",
+ "env_digest": "5c6e181c923c",
+ "n": 40,
+ "scored": 40,
+ "errors": 0,
+ "correct": 27,
+ "accuracy": 0.675,
+ "ci95": [
+  0.5202,
+  0.7992
+ ],
+ "in_top3_differential": 29,
+ "no_diagnosis": 0,
+ "leaks": 6,
+ "mean_questions": 3.55,
+ "mean_requests": 4.67,
+ "mean_duration_s": 32.27,
+ "total_cost_usd": 0.47
+}

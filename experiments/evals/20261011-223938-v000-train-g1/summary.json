@@ -1,0 +1,21 @@
+{
+ "harness": "v000",
+ "label": "train-g1",
+ "env_digest": "744e7905c8d1",
+ "n": 20,
+ "scored": 20,
+ "errors": 0,
+ "correct": 19,
+ "accuracy": 0.95,
+ "ci95": [
+  0.7639,
+  0.9911
+ ],
+ "in_top3_differential": 20,
+ "no_diagnosis": 0,
+ "leaks": 0,
+ "mean_questions": 3.7,
+ "mean_requests": 4.55,
+ "mean_duration_s": 34.39,
+ "total_cost_usd": 0.26
+}

@@ -1,0 +1,52 @@
+--- v000/lessons.md
++++ cand-gen1-cand4/lessons.md
+@@ -0,0 +1,33 @@
++# Lessons from past consultations
++
++## Every abnormal finding must be explained by your final diagnosis
++- Before submitting, list every abnormal finding from the exam, tests and history. Your diagnosis
++  must account for all of them. If one finding does not fit, either pick a diagnosis that explains
++  it or resolve it with a targeted test. Do not just write it down as a "gap" and submit anyway.
++- Objective findings beat the patient's own account. Patients describe things in lay terms and
++  often do not notice deficits (hearing loss, weakness, visual field loss, a skin lesion, a mass).
++  If the exam or a test shows an abnormality the patient denies, believe the exam or test.
++- If there is a discrepancy, check it with the objective test (for example audiometry, visual
++  fields, a lab value) rather than asking the patient again.
++
++## Pick between closely related diagnoses using the one feature that separates them
++- Many diagnoses come in pairs that differ by a single feature. Your answer must name the specific
++  one the findings support, not the more common or more general neighbour. Examples of such
++  pairs: vestibular neuritis (vertigo only) vs labyrinthitis (vertigo plus hearing loss);
++  Ménière disease vs vestibular migraine; cellulitis vs erysipelas; Crohn disease vs ulcerative
++  colitis; nephritic vs nephrotic syndrome.
++- When you recognise such a pair, look for the separating feature on purpose (ask, examine or
++  test for it) and let it decide.
++
++## Use the record you have
++- Findings not in the record come back as "not in the record" or normal. If a test you want is
++  not available, do not keep asking for variants of it. Move on and work with the abnormal
++  findings you already have; they were put in the case for a reason.
++- Order the simple test that targets the organ involved (audiometry for ear complaints, urinalysis
++  for urinary complaints, ECG for chest pain) early. It often holds the deciding finding.
++
++## Name the diagnosis at the right level
++- Give the specific disease, not a broad category or a symptom ("labyrinthitis", not "peripheral
++  vestibulopathy"; "community-acquired pneumonia", not "lower respiratory infection").
++- Do not pack alternatives into the diagnosis field. Put one condition there and the rest in the
++  differential.
+--- v000/system.md
++++ cand-gen1-cand4/system.md
+@@ -7,4 +7,12 @@
+ - submit_diagnosis: give your single most likely diagnosis, with a short differential. This ends the visit.
+ 
+ You have a limited number of questions and exam/test requests, so make each one count.
+-When you are confident, call submit_diagnosis.
++
++Before you call submit_diagnosis, check these three things:
++1. List every abnormal finding you have (exam, tests, history). Does your diagnosis explain each
++   one? If an exam or test finding conflicts with what the patient told you, trust the objective
++   finding.
++2. Is there a closely related diagnosis that differs by one feature (for example, hearing loss,
++   fever, or the location of a lesion)? If so, choose the one your findings actually support.
++3. Is your diagnosis the specific disease name, not a broader category?
++Then submit.

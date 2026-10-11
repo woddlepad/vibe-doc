@@ -7,6 +7,7 @@ import asyncio
 import json
 import sys
 import time
+from datetime import datetime, timedelta
 
 from .config import RUNS, prepare_environment
 
@@ -18,6 +19,17 @@ def _warn_if_test(case_id: str) -> None:
 
     if case_id in splits()["test"]:
         print(f"warning: {case_id} is in the locked test split; looking at it taints the final score", file=sys.stderr)
+
+
+def parse_deadline(hhmm: str, now: datetime | None = None) -> float:
+    """HH:MM (24h, machine local time) as a timestamp; a time already past today means tomorrow."""
+    now = now or datetime.now()
+    try:
+        h, m = map(int, hhmm.split(":"))
+        t = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"expected HH:MM (24h), got {hhmm!r}") from e
+    return (t if t > now else t + timedelta(days=1)).timestamp()
 
 
 def cmd_auth(args) -> None:
@@ -79,12 +91,14 @@ def cmd_eval(args) -> None:
     problems = h.validate()
     if problems:
         sys.exit(f"invalid harness: {problems}")
-    ev = asyncio.run(run_eval(h, split_cases(args.split, args.limit), args.split, args.concurrency, use_cache=not args.no_cache))
+    ev = asyncio.run(run_eval(h, split_cases(args.split, args.limit), args.label or args.split, args.concurrency, use_cache=not args.no_cache))
     if final and ev.summary()["scored"]:  # any scored test episode spends the split
         lock = {"harness": h.name, "digest": h.digest, "env_digest": ev.env_digest, "timestamp": time.strftime("%F %T"), "run": str(ev.out_dir)}
         TEST_LOCK.write_text(json.dumps(lock, indent=1) + "\n")
     print(json.dumps(ev.summary(), indent=1))
     print(f"saved to {ev.out_dir}")
+    s = ev.summary()
+    print(f"per episode: {s['mean_duration_s']}s, ${s['total_cost_usd'] / max(1, s['scored']):.3f} ({s['scored']} scored, ${s['total_cost_usd']} total)")
     if args.limit is None and args.split in ("dev", "test"):
         reg = load_registry()
         if any(v["name"] == h.name for v in reg["versions"]):
@@ -104,6 +118,10 @@ def cmd_improve(args) -> None:
             concurrency=args.concurrency,
             min_confidence=args.min_confidence,
             commit=args.commit,
+            screen=args.screen,
+            max_slowdown=args.max_slowdown,
+            min_gain=args.min_gain,
+            deadline=args.deadline,
         )
     )
     print(f"report: {build_report()}")
@@ -140,6 +158,7 @@ def main() -> None:
     s.add_argument("--concurrency", type=int, default=4)
     s.add_argument("--no-cache", action="store_true")
     s.add_argument("--final", action="store_true", help="required to score the locked test split")
+    s.add_argument("--label", help="names the run folder (defaults to the split)")
     s.set_defaults(fn=cmd_eval)
 
     s = sub.add_parser("improve", help="run the self-improvement loop")
@@ -150,6 +169,10 @@ def main() -> None:
     s.add_argument("--concurrency", type=int, default=4)
     s.add_argument("--min-confidence", type=float, default=0.75, help="required P(candidate beats parent)")
     s.add_argument("--commit", action="store_true", help="git commit + tag each promoted version")
+    s.add_argument("--screen", type=int, default=10, help="screen candidates on the first N dev cases first (0 disables)")
+    s.add_argument("--max-slowdown", type=float, default=1.5, help="discard candidates slower than this x the parent")
+    s.add_argument("--min-gain", type=int, default=1, help="required net dev cases gained over the parent")
+    s.add_argument("--deadline", type=parse_deadline, metavar="HH:MM", help="stop before work that would end after this local time")
     s.set_defaults(fn=cmd_improve)
 
     s = sub.add_parser("report", help="write runs/report.html")

@@ -40,7 +40,32 @@ uv run pytest                             # offline tests, no model calls
 
 `improve` options: `--train-batch 30` (failures shown to the optimizer), `--dev-limit N` (faster,
 noisier gate), `--candidates K` (parallel proposals per generation), `--min-confidence 0.75`
-(required bootstrap P(candidate beats parent)), `--commit` (git commit + tag each promoted version).
+(required bootstrap P(candidate beats parent)), `--min-gain 1` (required net dev cases gained),
+`--screen 10`, `--max-slowdown 1.5`, `--deadline HH:MM` (see below), `--commit` (git commit + tag
+each promoted version).
+
+## Time-boxed runs
+
+Each candidate is first screened on the first `--screen` dev cases (0 disables). If it scores more
+than 1 below the parent there, it is rejected without running the full dev set. The parent's screen
+score comes from its cached full-dev eval, and the candidate's screen episodes are cached, so a
+survivor runs only the remaining dev cases. A candidate that gains enough is still discarded if its
+mean episode time is over `--max-slowdown` × the parent's, or its dev cost over 1.5× the parent's.
+
+`--deadline HH:MM` (24h, machine local time; a time already past today means tomorrow) skips any
+generation, or candidate full-dev eval, projected to end after it. Projections use the parent's
+measured dev `mean_duration_s` (120 s until known) and the last optimizer round's wall time. Check
+the per-episode figures first (cached episodes keep the duration they were measured with; add
+`--no-cache` to re-measure):
+
+```bash
+uv run rsi eval --split dev --limit 8 --label calib    # last line: seconds and $ per episode
+# explore: several ideas, one generation
+uv run rsi improve --generations 1 --candidates 5 --screen 10 --train-batch 20
+# exploit: one idea per generation, a stricter gate, stop in time
+uv run rsi improve --generations 6 --candidates 1 --screen 10 --min-confidence 0.9 --min-gain 2 \
+  --train-batch 20 --deadline 23:30
+```
 
 ## Layout
 

@@ -20,6 +20,8 @@ from .runner import EvalResult, run_eval
 from .stats import paired_bootstrap
 
 MAX_PROMPT_CHARS = 16_000  # system.md + lessons.md, keeps the harness from bloating
+MAX_COST_RATIO = 1.5  # a candidate costing more than this x the parent on dev is discarded
+DEFAULT_EPISODE_S = 120.0  # episode duration guess until the parent's dev eval has measured one
 
 # ---------------------------------------------------------------- registry
 
@@ -318,6 +320,38 @@ def _log(msg: str) -> None:
     print(f"\n== {msg}", file=sys.stderr, flush=True)
 
 
+def _clock(ts: float) -> str:
+    return time.strftime("%H:%M", time.localtime(ts))
+
+
+def _too_costly(parent: dict, cand: dict, max_slowdown: float) -> str | None:
+    pd, cd, pc, cc = parent["mean_duration_s"], cand["mean_duration_s"], parent["total_cost_usd"], cand["total_cost_usd"]
+    if (pd and cd > max_slowdown * pd) or (pc and cc > MAX_COST_RATIO * pc):
+        return f"too slow/expensive: {cd:.0f}s vs {pd:.0f}s per episode (max x{max_slowdown}), ${cc:.2f} vs ${pc:.2f} total (max x{MAX_COST_RATIO})"
+    return None
+
+
+async def _dev_gate(
+    cand: Harness, dev: list, screen_ids: list[str], parent_screen: int, t: float, concurrency: int, deadline: float | None, base: dict
+) -> tuple[str | None, EvalResult | None]:
+    """Screen on the first dev cases, then run the full dev set (screen episodes come from the cache)."""
+    n = len(screen_ids)
+    if n:
+        ev = await run_eval(cand, dev[:n], "screen", concurrency)
+        if ev.summary()["errors"]:
+            return f"eval incomplete: {ev.summary()['errors']} errors", None
+        cs = sum(ev.outcomes().values())
+        base["screen"] = {"n": n, "parent": parent_screen, "candidate": cs}
+        _log(f"{cand.name}: screen {cs}/{n} vs parent {parent_screen}/{n}")
+        if cs < parent_screen - 1:
+            return f"screened out: {cs}/{n} vs parent {parent_screen}/{n}", None
+    est = (len(dev) - n) * t / concurrency
+    if deadline and time.time() + est > deadline:
+        return "deadline", None
+    _log(f"{cand.name}: full dev, est. {est / 60:.0f} min, projected finish {_clock(time.time() + est)}")
+    return None, await run_eval(cand, dev, "dev", concurrency)
+
+
 async def improve(
     generations: int = 3,
     train_batch: int = 30,
@@ -326,15 +360,30 @@ async def improve(
     concurrency: int = 4,
     min_confidence: float = 0.75,
     commit: bool = False,
+    screen: int = 10,
+    max_slowdown: float = 1.5,
+    min_gain: int = 1,
+    deadline: float | None = None,
 ) -> None:
     reg = load_registry()
     dev = split_cases("dev", dev_limit)
     train_all = split_cases("train")
     session = time.strftime("%Y%m%d-%H%M%S")
+    screen_ids = [c.id for c in dev[:max(0, screen)]]
+    optimizer_s = 0.0  # measured wall time of the last optimizer round
+    if deadline:
+        _log(f"deadline {time.strftime('%F %H:%M', time.localtime(deadline))} ({(deadline - time.time()) / 60:.0f} min from now)")
 
     for gen in range(1, generations + 1):
         parent = Harness.load(reg["best"])
-        _log(f"generation {gen}/{generations}: parent {parent.name}")
+        t = _version(reg, parent.name).get("dev", {}).get("mean_duration_s") or DEFAULT_EPISODE_S
+        # train batch + every candidate's screen and rest of dev (= the full dev set), plus the optimizer
+        est = (min(train_batch, len(train_all)) + candidates * len(dev)) * t / concurrency + optimizer_s
+        now = time.time()
+        if deadline and now + est > deadline:
+            _log(f"deadline: skipping generation {gen} (est. {est / 60:.0f} min, {(deadline - now) / 60:.0f} min left)")
+            break
+        _log(f"generation {gen}/{generations}: parent {parent.name}, est. {est / 60:.0f} min, projected finish {_clock(now + est)}")
 
         parent_dev = await run_eval(parent, dev, "dev", concurrency)
         record_eval(reg, parent.name, parent_dev, "dev")
@@ -344,6 +393,8 @@ async def improve(
                 f"{parent.name} dev eval incomplete: {ps['errors']} errors, {ps['scored']} scored "
                 f"(see {parent_dev.out_dir}). Fix the cause and rerun; finished episodes are cached."
             )
+        t = ps["mean_duration_s"] or t
+        parent_screen = sum(parent_dev.outcomes()[i] for i in screen_ids)
         rng = random.Random(f"{session}:{gen}")
         batch = rng.sample(train_all, min(train_batch, len(train_all)))
         train = await run_eval(parent, batch, f"train-g{gen}", concurrency)
@@ -358,7 +409,9 @@ async def improve(
             workspaces.append(ws)
 
         _log(f"optimizer ({OPTIMIZER_MODEL}) writing {candidates} candidate(s)")
+        started = time.time()
         proposals = await asyncio.gather(*(propose(ws, reg["locked_model"]) for ws in workspaces), return_exceptions=True)
+        optimizer_s = time.time() - started
 
         best: tuple[float, Path, dict, EvalResult] | None = None
         for ws, prop in zip(workspaces, proposals, strict=True):
@@ -374,20 +427,19 @@ async def improve(
                 (ws / "diff.patch").write_text(diff(parent, cand))
                 _log(f"{ws.name}: {base['hypothesis'][:300]}")
                 problems = _check_candidate(cand, parent, reg["locked_model"])
-                cand_dev = None if problems else await run_eval(cand, dev, "dev", concurrency)
+                if problems:
+                    reason, cand_dev = "invalid: " + "; ".join(problems), None
+                else:
+                    reason, cand_dev = await _dev_gate(cand, dev, screen_ids, parent_screen, t, concurrency, deadline, base)
             except Exception as e:  # noqa: BLE001
-                problems = [f"candidate error: {type(e).__name__}: {e}"]
-            if problems:
-                reg["rejected"].append(base | {"reason": "invalid: " + "; ".join(problems)})
-                save_registry(reg)
-                _log(f"{ws.name} rejected: {problems}")
-                continue
+                reason, cand_dev = f"invalid: candidate error: {type(e).__name__}: {e}", None
             # Compare on the full dev set only: a survivor subset would reward failing on hard cases.
-            n_errors = parent_dev.summary()["errors"] + cand_dev.summary()["errors"]
-            if n_errors:
-                reg["rejected"].append(base | {"reason": f"eval incomplete: {n_errors} errors"})
+            if reason is None and cand_dev.summary()["errors"]:
+                reason = f"eval incomplete: {cand_dev.summary()['errors']} errors"
+            if reason:
+                reg["rejected"].append(base | {"reason": reason})
                 save_registry(reg)
-                _log(f"{ws.name} rejected: eval incomplete, {n_errors} errors")
+                _log(f"{ws.name} rejected: {reason}")
                 continue
 
             a, b = parent_dev.outcomes(), cand_dev.outcomes()
@@ -395,6 +447,7 @@ async def improve(
             pa, pb = [a[i] for i in shared], [b[i] for i in shared]
             conf = paired_bootstrap(pa, pb)
             acc_a, acc_b = sum(pa) / max(1, len(shared)), sum(pb) / max(1, len(shared))
+            gain = sum(pb) - sum(pa)
             entry = {
                 "id": cid,
                 "parent": parent.name,
@@ -404,18 +457,27 @@ async def improve(
                 "parent_dev_accuracy": round(acc_a, 4),
                 "confidence": round(conf, 3),
                 "paired_n": len(shared),
+                "gain": gain,
                 "diff": str((ws / "diff.patch").relative_to(ROOT)),
-            }
-            _log(f"{ws.name}: dev {acc_a:.0%} -> {acc_b:.0%} on {len(shared)} paired cases, P(better)={conf:.2f}")
-            if acc_b > acc_a and conf >= min_confidence:
-                if best is None or acc_b > best[0]:
-                    if best is not None:
-                        reg["rejected"].append(best[2] | {"reason": "another candidate scored higher"})
-                    best = (acc_b, ws, entry, cand_dev)
-                else:
-                    reg["rejected"].append(entry | {"reason": "another candidate scored higher"})
+            } | ({"screen": base["screen"]} if "screen" in base else {})
+            cs = cand_dev.summary()
+            _log(
+                f"{ws.name}: dev {acc_a:.0%} -> {acc_b:.0%} ({gain:+d}) on {len(shared)} paired cases, P(better)={conf:.2f}; "
+                f"{cs['mean_duration_s']:.0f}s vs {ps['mean_duration_s']:.0f}s per episode, ${cs['total_cost_usd']:.2f} vs ${ps['total_cost_usd']:.2f}"
+            )
+            if not (acc_b > acc_a and conf >= min_confidence and gain >= min_gain):
+                reason = f"not clearly better: {gain:+d} correct (need +{min_gain}), P(better)={conf:.2f} (need {min_confidence})"
             else:
-                reg["rejected"].append(entry | {"reason": f"not clearly better (need gain and P>={min_confidence})"})
+                reason = _too_costly(ps, cs, max_slowdown)
+            if reason:
+                reg["rejected"].append(entry | {"reason": reason})
+                _log(f"{ws.name} rejected: {reason}")
+            elif best is None or acc_b > best[0]:
+                if best is not None:
+                    reg["rejected"].append(best[2] | {"reason": "another candidate scored higher"})
+                best = (acc_b, ws, entry, cand_dev)
+            else:
+                reg["rejected"].append(entry | {"reason": "another candidate scored higher"})
             save_registry(reg)
 
         if best is None:
@@ -434,6 +496,7 @@ async def improve(
                 "changes": entry["changes"],
                 "confidence": entry["confidence"],
                 "paired_n": entry["paired_n"],
+                "gain": entry["gain"],
                 "diff": entry["diff"],
                 "dev": cand_dev.summary() | {"run": str(cand_dev.out_dir.relative_to(ROOT))},
             }

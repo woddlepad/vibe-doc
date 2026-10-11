@@ -292,12 +292,12 @@ def test_leaked_episode_is_wrong_and_skips_judge(monkeypatch):
     assert r["env_digest"] == runner.env_digest()
 
 
-def _result(case_id, correct=True, leak=False):
+def _result(case_id, correct=True, leak=False, **kw):
     return {
         "case_id": case_id, "harness": "h", "gold": "g", "diagnosis": "d", "differential": [], "correct": correct,
         "differential_match": 0, "judge_rationale": "", "questions": 1, "requests": 1, "leak": leak,
         "duration_s": 1.0, "cost_usd": 0.0, "objective": "o", "events": [],
-    }
+    } | kw
 
 
 def test_run_eval_does_not_cache_leaks(tmp_path, monkeypatch):
@@ -319,8 +319,10 @@ def test_run_eval_does_not_cache_leaks(tmp_path, monkeypatch):
     assert ev.summary()["env_digest"] == runner.env_digest() and ev.summary()["leaks"] == 1
 
 
-def _fake_improve(monkeypatch, tmp_path, evals, edits):
+def _fake_improve(monkeypatch, tmp_path, evals, edits, calls=None):
     async def fake_run_eval(h, cases, label, concurrency=4, **kw):
+        if calls is not None:
+            calls.append((h.name, label, len(cases)))
         res = evals.get(h.name, lambda c: _result(c.id))
         if isinstance(res, Exception):
             raise res
@@ -337,6 +339,8 @@ def _fake_improve(monkeypatch, tmp_path, evals, edits):
     monkeypatch.setattr(optimize, "save_registry", lambda r: None)
     monkeypatch.setattr(optimize, "record_eval", lambda *a: None)
     monkeypatch.setattr(optimize, "RUNS", tmp_path)
+    monkeypatch.setattr(optimize, "ROOT", tmp_path)
+    monkeypatch.setattr(optimize, "HARNESSES", tmp_path / "harnesses")
     return reg
 
 
@@ -367,6 +371,83 @@ def test_improve_aborts_on_parent_eval_errors(tmp_path, monkeypatch):
         asyncio.run(optimize.improve(generations=1, dev_limit=3))
 
 
+DEV20 = splits()["dev"][:20]
+LESSONS = {"gen1-cand1": lambda h: (h / "lessons.md").write_text("- Ask about timing.\n")}
+
+
+def _wrong_on(ids, **kw):
+    return lambda c: _result(c.id, correct=c.id not in ids, **kw)
+
+
+def _improve_one(monkeypatch, tmp_path, evals, **kw):
+    calls = []
+    reg = _fake_improve(monkeypatch, tmp_path, evals, LESSONS, calls)
+    asyncio.run(optimize.improve(generations=1, train_batch=2, dev_limit=20, **kw))
+    return reg, [c for c in calls if c[0] == "cand-gen1-cand1"]
+
+
+def test_screened_out_candidate_skips_full_dev(tmp_path, monkeypatch):
+    reg, cand_calls = _improve_one(monkeypatch, tmp_path, {"cand-gen1-cand1": _wrong_on(DEV20[:2])})
+    assert cand_calls == [("cand-gen1-cand1", "screen", 10)]
+    [rej] = reg["rejected"]
+    assert rej["reason"] == "screened out: 8/10 vs parent 10/10"
+    assert rej["screen"] == {"n": 10, "parent": 10, "candidate": 8}
+
+
+def test_screen_passing_candidate_gets_full_dev_and_is_promoted(tmp_path, monkeypatch):
+    # One screen case lost (allowed), four later cases won: net +3.
+    evals = {"v000": _wrong_on(DEV20[10:14]), "cand-gen1-cand1": _wrong_on(DEV20[:1])}
+    reg, cand_calls = _improve_one(monkeypatch, tmp_path, evals)
+    assert cand_calls == [("cand-gen1-cand1", "screen", 10), ("cand-gen1-cand1", "dev", 20)]
+    assert reg["best"] == "v001" and reg["rejected"] == []
+    assert reg["versions"][-1]["gain"] == 3 and (tmp_path / "harnesses/v001/lessons.md").exists()
+
+
+def test_min_gain_rejects_small_gain(tmp_path, monkeypatch):
+    evals = {"v000": _wrong_on(DEV20[12:13])}
+    reg, _ = _improve_one(monkeypatch, tmp_path, evals, min_gain=2, min_confidence=0.0)
+    assert reg["best"] == "v000"
+    assert "+1 correct (need +2)" in reg["rejected"][0]["reason"]
+
+
+def test_slow_candidate_is_discarded(tmp_path, monkeypatch):
+    evals = {"v000": _wrong_on(DEV20[10:14]), "cand-gen1-cand1": _wrong_on([], duration_s=2.0)}
+    reg, _ = _improve_one(monkeypatch, tmp_path, evals, screen=0)
+    assert reg["best"] == "v000"
+    assert reg["rejected"][0]["reason"].startswith("too slow/expensive: 2s vs 1s per episode")
+
+
+def test_deadline_skips_generation_and_full_dev(tmp_path, monkeypatch):
+    import time
+
+    # No measured duration yet: 120 s/episode x (2 train + 20 dev) / 4 = 11 min > 1 min left.
+    reg, cand_calls = _improve_one(monkeypatch, tmp_path, {}, deadline=time.time() + 60)
+    assert cand_calls == [] and reg["rejected"] == [] and reg["best"] == "v000"
+
+    # The generation fits at 1 s/episode, but the parent's dev eval measures 100 s, so the
+    # candidate's remaining 10 dev cases (~4 min) would cross the deadline.
+    evals = {"v000": lambda c: _result(c.id, duration_s=100.0)}
+    calls = []
+    reg = _fake_improve(monkeypatch, tmp_path, evals, LESSONS, calls)
+    reg["versions"][0]["dev"] = {"mean_duration_s": 1.0}
+    asyncio.run(optimize.improve(generations=1, train_batch=2, dev_limit=20, deadline=time.time() + 60))
+    assert [c for c in calls if c[0] == "cand-gen1-cand1"] == [("cand-gen1-cand1", "screen", 10)]
+    assert reg["rejected"][0]["reason"] == "deadline"
+
+
+def test_parse_deadline():
+    from datetime import datetime
+
+    from rsi.cli import parse_deadline
+
+    now = datetime(2026, 10, 11, 21, 30)
+    assert parse_deadline("23:45", now) == datetime(2026, 10, 11, 23, 45).timestamp()
+    assert parse_deadline("00:30", now) == datetime(2026, 10, 12, 0, 30).timestamp()  # past midnight
+    for bad in ("25:00", "9", "ab:cd"):
+        with pytest.raises(Exception, match="HH:MM"):
+            parse_deadline(bad, now)
+
+
 def test_final_test_eval_runs_once(tmp_path, monkeypatch):
     from argparse import Namespace
 
@@ -378,7 +459,7 @@ def test_final_test_eval_runs_once(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "TEST_LOCK", tmp_path / "test-final.json")
     monkeypatch.setattr(runner, "run_eval", fake_run_eval)
     monkeypatch.setattr(optimize, "load_registry", lambda: {"best": "v000", "versions": []})
-    args = Namespace(split="test", final=True, harness="v000", limit=None, concurrency=1, no_cache=False)
+    args = Namespace(split="test", final=True, harness="v000", limit=None, concurrency=1, no_cache=False, label=None)
     cli.cmd_eval(args)
     lock = json.loads((tmp_path / "test-final.json").read_text())
     assert lock["harness"] == "v000" and lock["digest"] == Harness.load("v000").digest and lock["timestamp"]

@@ -6,6 +6,7 @@ Nothing in this file is visible to or editable by the optimizer.
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -92,6 +93,20 @@ def _text(s: str) -> dict:
     return {"content": [{"type": "text", "text": s}]}
 
 
+REDACTED = "[finding consistent with the diagnosis; name withheld]"
+
+
+def redact(text: str, case: Case) -> str:
+    """Case files sometimes name the diagnosis in a result ("biopsy consistent with dermatofibroma").
+    Strip the answer key and its aliases from what the frozen roles say, so the doctor must still name it."""
+    keys = {case.diagnosis, *case.aliases, re.sub(r"\s*\([^)]*\)", "", case.diagnosis)}
+    for k in sorted((k.strip() for k in keys if len(k.strip()) >= 5), key=len, reverse=True):
+        words = re.split(r"[\s\-]+", k.replace("'s", "").replace("’s", ""))
+        pattern = r"\b" + r"(?:['’]?s)?[\s\-]*".join(map(re.escape, words)) + r"(?:['’]?s)?\b"
+        text = re.sub(pattern, REDACTED, text, flags=re.IGNORECASE)
+    return text
+
+
 def build_clinic_tools(ep: Episode, patient: Speaker, examiner: Speaker) -> list:
     """The doctor's tools. They close over this episode's state."""
 
@@ -107,7 +122,7 @@ def build_clinic_tools(ep: Episode, patient: Speaker, examiner: Speaker) -> list
         if ep.questions >= ep.budget.max_questions:
             return _text("Question budget used up. Call submit_diagnosis now.")
         ep.questions += 1
-        answer = await patient.say(args["question"])
+        answer = redact(await patient.say(args["question"]), ep.case)
         ep.log("ask_patient", question=args["question"], answer=answer)
         left = ep.budget.max_questions - ep.questions
         return _text(f"{answer}\n\n[{left} questions left]")
@@ -119,7 +134,7 @@ def build_clinic_tools(ep: Episode, patient: Speaker, examiner: Speaker) -> list
             return _text("Exam/test budget used up. Call submit_diagnosis now.")
         ep.requests += 1
         label = "Physical exam" if kind == "examine" else "Test ordered"
-        result = await examiner.say(f"{label}: {what}")
+        result = redact(await examiner.say(f"{label}: {what}"), ep.case)
         ep.log(kind, request=what, result=result)
         left = ep.budget.max_requests - ep.requests
         return _text(f"{result}\n\n[{left} exam/test requests left]")

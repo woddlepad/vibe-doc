@@ -283,10 +283,13 @@ def test_leaked_episode_is_wrong_and_skips_judge(monkeypatch):
     async def no_judge(*args, **kwargs):
         raise AssertionError("the judge must not run on a leaked episode")
 
+    import rsi.clinic as clinic
+
     monkeypatch.setattr(runner, "Persona", FakePersona)
     monkeypatch.setattr(runner, "build_clinic_server", fake_server)
     monkeypatch.setattr(runner, "query", fake_query)
     monkeypatch.setattr(runner, "grade", no_judge)
+    monkeypatch.setattr(clinic, "redact", lambda text, case: text)  # simulate a leak the redaction missed
     r = asyncio.run(runner.run_episode(Harness.load("v000"), all_cases()["mqx-000"]))
     assert r["leak"] and not r["correct"] and r["judge_rationale"] == "simulator leak"
     assert r["env_digest"] == runner.env_digest()
@@ -465,3 +468,14 @@ def test_final_test_eval_runs_once(tmp_path, monkeypatch):
     assert lock["harness"] == "v000" and lock["digest"] == Harness.load("v000").digest and lock["timestamp"]
     with pytest.raises(SystemExit, match="already scored once"):
         cli.cmd_eval(args)
+
+
+def test_redaction_strips_answer_key_from_frozen_roles():
+    from rsi.clinic import REDACTED, redact
+
+    c = all_cases()["mqx-212"]  # Crohn’s disease
+    out = redact("Biopsy suggests Crohn's disease; crohn disease pattern; Crohns colitis.", c)
+    assert out.count(REDACTED) == 2 and "crohn disease" not in out.lower() and "crohn's" not in out.lower()
+    c = all_cases()["mqx-000"]  # Myasthenia gravis
+    assert redact("Ptosis worsens with upward gaze.", c) == "Ptosis worsens with upward gaze."
+    assert "myasthenia" not in redact("AChR antibodies: positive, consistent with Myasthenia Gravis.", c).lower()

@@ -1,0 +1,13 @@
+{
+ "best": "v000",
+ "locked_model": "claude-haiku-5-5",
+ "versions": [
+  {
+   "name": "v000",
+   "parent": null,
+   "created": "2026-10-11 19:19:27",
+   "hypothesis": "baseline"
+  }
+ ],
+ "rejected": []
+}

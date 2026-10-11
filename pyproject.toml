@@ -1,0 +1,20 @@
+[project]
+name = "rsi"
+version = "0.1.0"
+description = "Self-improving diagnosis harness on the Claude Agent SDK"
+requires-python = ">=3.12"
+dependencies = [
+    "claude-agent-sdk>=0.2.165",
+]
+
+[project.scripts]
+rsi = "rsi:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

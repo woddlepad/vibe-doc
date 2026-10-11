@@ -241,7 +241,12 @@ def _guard(ws: Path):
             g = args.get(key)
             if isinstance(g, str) and (g.startswith(("/", "~")) or ".." in g.replace("\\", "/").split("/")):
                 return deny(f"{key} must be relative and stay inside the workspace {ws}")
+        for key in ("file_path", "path"):
+            if isinstance(args.get(key), str) and args[key].startswith("~"):
+                return deny(f"{key} must not start with ~; use a path inside the workspace {ws}")
         for key, v in args.items():
+            if key == "pattern" and name == "Grep":
+                continue  # a regex, not a path
             if key not in _PAYLOAD_KEYS and isinstance(v, str) and v.startswith("/") and not resolve(v).is_relative_to(ws):
                 return deny(f"{v} is outside the workspace {ws}")
         if name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):

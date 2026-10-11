@@ -32,6 +32,9 @@ EDITABLE_DIRS = (".claude/skills/",)
 # Skills are one SKILL.md each with plain-text frontmatter; hooks, allowed-tools, model etc. are executable.
 SKILL_FILE = re.compile(r"\.claude/skills/[A-Za-z0-9_-]+/SKILL\.md")
 SKILL_KEYS = {"name", "description"}
+# One `key: value` per line at column 0; values are plain single-line strings (no block, flow,
+# anchor, alias or tag syntax, no trailing ':' that would open a nested mapping).
+SKILL_LINE = re.compile(r"^(name|description):\s*([^\s\[{&*!|>].*)$")
 
 
 class HarnessError(ValueError):
@@ -47,17 +50,22 @@ def is_editable(rel: str) -> bool:
 
 def skill_problems(text: str) -> list[str]:
     """Frontmatter may hold only `name` and `description`; the body may not run commands."""
-    lines = text.splitlines()
+    lines = text.replace("\r", "").splitlines()
     fences = [i for i, line in enumerate(lines) if line.strip() == "---"]
     if len(fences) < 2 or fences[0] != 0:
         return ["missing --- frontmatter ---"]
-    problems = []
+    problems, seen = [], []
     for line in lines[1 : fences[1]]:
-        if not line.strip() or line[0] in " \t#":
-            continue  # blank, comment or continuation of a multi-line value
-        key = line.split(":", 1)[0].strip() if ":" in line else line.strip()
-        if key not in SKILL_KEYS:
-            problems.append(f"frontmatter key not allowed: {key!r} (allowed: {sorted(SKILL_KEYS)})")
+        if not line.strip() or line.startswith("#"):
+            continue
+        m = SKILL_LINE.match(line)
+        if not m or m[2].rstrip().endswith(":"):
+            problems.append(f"frontmatter line not allowed: {line!r} (only `name: text` and `description: text`)")
+        else:
+            seen.append(m[1])
+    for key in sorted(SKILL_KEYS):
+        if seen.count(key) != 1:
+            problems.append(f"frontmatter needs exactly one {key!r} (found {seen.count(key)})")
     if "!`" in text:
         problems.append("dynamic !`command` not allowed")
     return problems

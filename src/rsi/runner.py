@@ -112,7 +112,7 @@ async def run_episode(harness: Harness, case: Case, verbose: bool = False) -> di
             ep.log("fallback_diagnosis", diagnosis=ep.diagnosis)
 
     spoken = " ".join(e.get("answer", "") + " " + e.get("result", "") for e in ep.events)
-    leak = mentions(spoken, case.diagnosis)
+    leak = mentions(spoken, case.diagnosis, case.aliases)
     if leak:  # a frozen role gave the answer away: never credit it, and don't pay the judge
         verdict = {"correct": False, "differential_match": 0, "rationale": "simulator leak", "judge_cost_usd": 0.0}
     else:

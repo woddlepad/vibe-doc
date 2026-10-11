@@ -45,13 +45,22 @@ def answer_keys(gold: str, aliases: tuple[str, ...] = ()) -> set[str]:
     return {normalize(k) for g in (gold, *aliases) for k in (g, re.sub(r"\([^)]*\)", " ", g))}
 
 
+def head_clause(pred: str) -> str:
+    """The diagnosis itself, before any qualifier: "X (likely benign or borderline), left" -> "X"."""
+    return re.split(r"\s*[(,]|\s+-\s+", pred, maxsplit=1)[0].strip()
+
+
 def reject_reason(pred: str | None) -> str | None:
-    """Why a prediction is wrong without grading it, or None if it is a single gradable diagnosis."""
+    """Why a prediction is wrong without grading it, or None if it is a single gradable diagnosis.
+
+    Only the head clause is checked: qualifiers like "(benign or borderline)" or ", from pivoting/twisting"
+    are not alternative answers."""
     if not pred:
         return "no diagnosis submitted"
-    if MULTI_ANSWER.search(pred):
+    head = head_clause(pred)
+    if MULTI_ANSWER.search(head):
         return "multiple diagnoses submitted"
-    if len(pred) > MAX_DIAGNOSIS_CHARS:
+    if len(head) > MAX_DIAGNOSIS_CHARS:
         return "diagnosis too long"
     return None
 

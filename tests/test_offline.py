@@ -38,7 +38,7 @@ def test_judge_quick_match():
 
 
 def test_judge_never_strips_the_prediction():
-    assert quick_match("Myasthenia gravis (ruled out; it is botulism)", "Myasthenia gravis") is False
+    assert quick_match("Myasthenia gravis (ruled out; it is botulism)", "Myasthenia gravis") is None  # LLM judge sees the qualifier
     assert quick_match("Myasthenia gravis (ocular)", "Myasthenia gravis") is None
     # The answer key's own parenthetical is optional.
     assert quick_match("Chronic lymphocytic leukemia", "Chronic lymphocytic leukemia (CLL)") is True

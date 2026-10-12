@@ -20,7 +20,14 @@ The interactive **Doctor Live** demo uses OpenAI Realtime voice.
 
 ## How the harness works
 
-![Consultation diagram: a patient tells their story, the doctor asks questions and requests exams/tests, and a judge checks the submitted diagnosis](docs/assets/clinic-flow.png)
+![AgentClinic paper architecture diagram: agent composition and interaction between doctor, patient, measurement and moderator agents](deck/public/agentclinic-figure.webp)
+
+*Figure 1 from [Schmidgall et al., AgentClinic (2024)](https://arxiv.org/abs/2405.07960v1),
+used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).*
+
+This is the paper’s original clinic architecture. Our harness uses its patient, doctor and
+measurement roles, replaces the moderator with a frozen diagnosis judge, and leaves out bias
+injection. The improvement loop below is our addition.
 
 The patient, examiner and judge are frozen. The doctor sees only the patient’s replies and
 requested findings; the answer key stays hidden. It submits one diagnosis for scoring.

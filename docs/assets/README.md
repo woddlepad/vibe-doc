@@ -12,3 +12,9 @@ hoop** theme (`#/7/…`). They preserve the original deck artwork, typography an
 Source: [`deck/src/slides.tsx`](../../deck/src/slides.tsx) and
 [`deck/src/Hoop.tsx`](../../deck/src/Hoop.tsx). Exports are 1920 × 1080, with presentation
 controls hidden. Re-export the slides when changing the deck’s claims or diagrams.
+
+The main README uses the original **AgentClinic Figure 1** for the clinic architecture:
+[`deck/public/agentclinic-figure.webp`](../../deck/public/agentclinic-figure.webp).
+Source: Schmidgall et al., *AgentClinic: a multimodal agent benchmark to evaluate AI in simulated
+clinical environments*, [arXiv:2405.07960v1 (2024)](https://arxiv.org/abs/2405.07960v1),
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The deck stores a WebP copy of the figure.

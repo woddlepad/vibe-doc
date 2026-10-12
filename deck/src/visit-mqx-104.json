@@ -1,0 +1,199 @@
+{
+ "case": "mqx-104",
+ "gold": "Bronchiectasis",
+ "before": {
+  "version": "v000",
+  "correct": false,
+  "questions": 8,
+  "tests": 8,
+  "steps": [
+   {
+    "who": "doctor",
+    "text": "Can you tell me about your cough: how long have you had it, and what does it sound like, productive or dry?"
+   },
+   {
+    "who": "patient",
+    "text": "It's been about 11 years now, on and off. The cough is pretty aggressive, and I bring up a lot of thick sputum, yellow-green in color. It's usually worse in the morning."
+   },
+   {
+    "who": "doctor",
+    "text": "How often do you get bouts of bronchitis, and do you have any shortness of breath, wheezing, or blood in your sputum?"
+   },
+   {
+    "who": "patient",
+    "text": "I get bronchitis flare-ups several times a year, and I've needed antibiotics for them more than once. I don't have any shortness of breath, and I haven't noticed blood in my sputum."
+   },
+   {
+    "who": "doctor",
+    "text": "Do you have any history of recurrent sinus infections, ear infections, pneumonia, or trouble with digestion, greasy stools, or poor weight gain?"
+   },
+   {
+    "who": "patient",
+    "text": "No sinus or ear infections that I can recall, and no pneumonia. My digestion has been fine, and I haven't noticed greasy stools or trouble gaining weight."
+   },
+   {
+    "who": "doctor",
+    "text": "Do you smoke or vape, have you ever smoked, and do you have any occupational or environmental exposures such as dust, fumes, or mold?"
+   },
+   {
+    "who": "patient",
+    "text": "I don't smoke or vape, and I've never smoked. I don't know of any dust, fumes, or mold exposure at work or at home that would be different from anyone else's."
+   },
+   {
+    "who": "doctor",
+    "text": "Did you have significant respiratory illness as a child, such as severe pneumonia, whooping cough, or measles, and does anyone in your family have lung disease or cystic fibrosis?"
+   },
+   {
+    "who": "patient",
+    "text": "I don't remember any serious lung infections as a kid. I had the usual childhood illnesses, but nothing that put me in the hospital. As far as I know, no one in my family has lung disease or cystic fibrosis."
+   },
+   {
+    "who": "exam",
+    "text": "Vital signs including temperature, respiratory rate, oxygen saturation, and heart rate; then chest auscultation for crackles, wheezes, and rhonchi; clubbing of fingers; and nasal/sinus exam.",
+    "result": "Vital signs: Temperature 36.7°C (98.0°F); Heart Rate 80 bpm; Respiratory Rate 16 breaths/min. Auscultation: Crackles and wheezing over the right middle lobe. Not in the examination data: oxygen saturation, clubbing of fingers, and nasal/sinus examination. No findings are recorded for these."
+   },
+   {
+    "who": "test",
+    "text": "High-resolution CT (HRCT) of the chest",
+    "result": "Normal / unremarkable."
+   },
+   {
+    "who": "exam",
+    "text": "Oxygen saturation at rest, and inspect fingers for digital clubbing.",
+    "result": "Oxygen saturation and digital clubbing are not in the examination data. Normal / unremarkable."
+   },
+   {
+    "who": "test",
+    "text": "Spirometry with pre- and post-bronchodilator testing",
+    "result": "Pulmonary_Function_Tests: FVC: Reduced; FEV1: Reduced; FEV1/FVC Ratio: Normal. Pre and post-bronchodilator comparison is not in the data."
+   },
+   {
+    "who": "test",
+    "text": "Complete blood count with differential and serum IgE, IgG, IgA, IgM",
+    "result": "Normal / unremarkable."
+   },
+   {
+    "who": "doctor",
+    "text": "Do you have any heartburn or reflux, post-nasal drip, itchy or runny nose, or any history of asthma, eczema, or allergies? Are you on any medications such as ACE inhibitors?"
+   },
+   {
+    "who": "patient",
+    "text": "I don't have heartburn or reflux, and I don't really get post-nasal drip or a runny nose. I've never been told I have asthma, eczema, or allergies. I'm not on any medications, including ACE inhibitors."
+   },
+   {
+    "who": "doctor",
+    "text": "Have you had nasal congestion or runny nose since early childhood, any sinus surgery, ear problems, or fertility problems, and do you have any unintentional weight loss, night sweats, or fevers?"
+   },
+   {
+    "who": "patient",
+    "text": "No nasal congestion or runny nose since I was a kid, no sinus surgery, and no ear problems. I've had no trouble with fertility either. I haven't lost weight without trying, and I haven't had night sweats or fevers."
+   },
+   {
+    "who": "test",
+    "text": "Sweat chloride test and serum alpha-1 antitrypsin level",
+    "result": "Normal / unremarkable."
+   },
+   {
+    "who": "test",
+    "text": "Sputum culture with acid-fast bacilli smear and culture (three early-morning samples)",
+    "result": "Sputum_Culture: Findings: Heavy growth of non-specific bacteria, no TB or fungal growth. The acid-fast bacilli smear and the three early-morning sample details are not in the data."
+   },
+   {
+    "who": "test",
+    "text": "Flexible bronchoscopy with bronchoalveolar lavage of the right middle lobe",
+    "result": "Normal / unremarkable."
+   },
+   {
+    "who": "doctor",
+    "text": "Does your cough get worse when eating, drinking, or lying down, do you have any trouble swallowing, and do you have any spinal curvature, chest wall deformity, or joint or skin symptoms?"
+   },
+   {
+    "who": "patient",
+    "text": "No, my cough isn't really tied to eating, drinking, or lying down. I don't have any trouble swallowing. I haven't noticed any problems with my spine, chest, joints, or skin either."
+   },
+   {
+    "who": "dx",
+    "text": "Chronic bacterial (suppurative) bronchitis: a chronic productive cough with recurrent purulent bronchitis flares, without radiographic bronchiectasis"
+   }
+  ]
+ },
+ "after": {
+  "version": "v001",
+  "correct": true,
+  "questions": 4,
+  "tests": 7,
+  "steps": [
+   {
+    "who": "doctor",
+    "text": "Can you tell me about your cough? How long have you had it, is it dry or productive, and what makes it better or worse?"
+   },
+   {
+    "who": "patient",
+    "text": "It's been about 11 years, on and off. Mine is a productive cough. I bring up a lot of thick, foamy, yellow-green phlegm, and it's usually worse in the morning. Antibiotics have helped in the past when I've had bouts of bronchitis, but I don't know of anything else that makes it better or worse."
+   },
+   {
+    "who": "doctor",
+    "text": "How many episodes of bronchitis have you had in the past year, and do you have any shortness of breath, wheezing, fever, or weight loss?"
+   },
+   {
+    "who": "patient",
+    "text": "I've had several bouts of bronchitis this past year, probably around four or five, and I needed antibiotics for most of them. No shortness of breath, no fever, and I haven't lost any weight. I'm not sure about wheezing, though. I don't really notice a whistling sound when I breathe."
+   },
+   {
+    "who": "doctor",
+    "text": "Have you ever had pneumonia as a child or adult, coughed up blood, had chronic sinus problems, or been told you have fertility, situs, or digestive problems? Any family history of lung disease such as cystic fibrosis?"
+   },
+   {
+    "who": "patient",
+    "text": "I don't think I've ever been told I had pneumonia, and I haven't coughed up blood. I don't have any sinus problems I know of, and no fertility, digestive, or organ-position problems that anyone has mentioned to me. As far as I know, nobody in my family has had lung disease like cystic fibrosis."
+   },
+   {
+    "who": "exam",
+    "text": "Full vital signs, then examine fingers for clubbing, and auscultate the chest for crackles, wheezes, and rhonchi.",
+    "result": "Vital Signs: Temperature: 36.7°C (98.0°F) Blood Pressure: 125/78 mmHg Heart Rate: 80 bpm Respiratory Rate: 16 breaths/min Clubbing of fingers: Not included in the examination data. Result: Normal / unremarkable. Chest auscultation: Crackles and wheezing over the right middle lobe. Rhonchi: Not included in the examination data. Result: Normal / unremarkable."
+   },
+   {
+    "who": "test",
+    "text": "High-resolution CT scan of the chest",
+    "result": "Normal / unremarkable."
+   },
+   {
+    "who": "test",
+    "text": "Sputum culture with bacterial and mycobacterial/fungal studies",
+    "result": "Sputum Culture: Heavy growth of non-specific bacteria, no TB or fungal growth."
+   },
+   {
+    "who": "test",
+    "text": "Spirometry with pre- and post-bronchodilator testing",
+    "result": "Pulmonary Function Tests: FVC: Reduced FEV1: Reduced FEV1/FVC Ratio: Normal Note: The data does not include separate pre and post-bronchodilator measurements."
+   },
+   {
+    "who": "test",
+    "text": "Chest X-ray, posteroanterior and lateral",
+    "result": "Chest X-ray: Irregular opacities in the right middle lobe and diffuse airway thickening. Note: The data does not specify whether posteroanterior and lateral views were obtained."
+   },
+   {
+    "who": "test",
+    "text": "Complete blood count with differential and serum total IgE with Aspergillus-specific IgE/IgG",
+    "result": "Normal / unremarkable."
+   },
+   {
+    "who": "test",
+    "text": "Sweat chloride test",
+    "result": "Normal / unremarkable."
+   },
+   {
+    "who": "doctor",
+    "text": "Do your bouts of bronchitis tend to start in the same location in your chest, and have you ever had a choking episode, foreign body aspiration, or been diagnosed with asthma or allergies?"
+   },
+   {
+    "who": "patient",
+    "text": "I don't really know where in my chest they start. It just feels like the same tightness and cough every time. I've never had a choking episode that I can remember, and nobody has ever said I inhaled anything. I haven't been diagnosed with asthma or allergies."
+   },
+   {
+    "who": "dx",
+    "text": "Bronchiectasis, localized to the right middle lobe (right middle lobe syndrome), non-cystic fibrosis, with recurrent bacterial exacerbations"
+   }
+  ]
+ }
+}

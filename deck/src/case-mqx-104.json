@@ -1,0 +1,47 @@
+{
+  "OSCE_Examination": {
+    "Objective_for_Doctor": "Assess and diagnose the patient presenting with chronic cough and recurrent bouts of bronchitis.",
+    "Patient_Actor": {
+      "Demographics": "51-year-old woman",
+      "History": "The patient has been experiencing an aggressive cough producing copious amounts of thick, foamy, yellow-green sputum for about 11 years, with exacerbations similar to the current presentation today. Reports that the cough is worse in the morning and has had multiple evaluations in the past due to recurrent bouts of bronchitis requiring antibiotics treatment. The patient is a non-smoker.",
+      "Symptoms": {
+        "Primary_Symptom": "Aggressive cough with thick, yellow-green sputum",
+        "Secondary_Symptoms": [
+          "Cough worse in the morning",
+          "History of recurrent bronchitis"
+        ]
+      },
+      "Past_Medical_History": "No other significant past medical history aside from the recurrent bronchitis.",
+      "Social_History": "Non-smoker, no history of alcohol or drug abuse.",
+      "Review_of_Systems": "Denies any fever, weight loss, night sweats, or shortness of breath."
+    },
+    "Physical_Examination_Findings": {
+      "Vital_Signs": {
+        "Temperature": "36.7°C (98.0°F)",
+        "Blood_Pressure": "125/78 mmHg",
+        "Heart_Rate": "80 bpm",
+        "Respiratory_Rate": "16 breaths/min"
+      },
+      "Respiratory_Examination": {
+        "Inspection": "No cyanosis or use of accessory muscles for breathing.",
+        "Auscultation": "Crackles and wheezing over the right middle lobe.",
+        "Percussion": "Normal thoracic percussion note.",
+        "Palpation": "No thoracic tenderness."
+      }
+    },
+    "Test_Results": {
+      "Chest_X-ray": {
+        "Findings": "Irregular opacities in the right middle lobe and diffuse airway thickening."
+      },
+      "Pulmonary_Function_Tests": {
+        "FVC": "Reduced",
+        "FEV1": "Reduced",
+        "FEV1/FVC_Ratio": "Normal"
+      },
+      "Sputum_Culture": {
+        "Findings": "Heavy growth of non-specific bacteria, no TB or fungal growth."
+      }
+    },
+    "Correct_Diagnosis": "Bronchiectasis"
+  }
+}

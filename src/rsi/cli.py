@@ -142,6 +142,12 @@ def cmd_report(args) -> None:
     print(build_report())
 
 
+def cmd_live(args) -> None:
+    from .live import serve
+
+    serve(host=args.host, port=args.port)
+
+
 def main() -> None:
     prepare_environment()
     p = argparse.ArgumentParser(prog="rsi", description="Self-improving diagnostic harness")
@@ -186,6 +192,11 @@ def main() -> None:
 
     s = sub.add_parser("report", help="write runs/report.html")
     s.set_defaults(fn=cmd_report)
+
+    s = sub.add_parser("live", help="start the local OpenAI voice doctor demo")
+    s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--port", type=int, default=8000)
+    s.set_defaults(fn=cmd_live)
 
     args = p.parse_args()
     args.fn(args)

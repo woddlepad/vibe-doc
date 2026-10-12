@@ -7,6 +7,73 @@ more held-out patients correctly.
 
 Everything runs on the **Claude Agent SDK**, so it can use a Claude subscription.
 
+## Doctor Live voice demo
+
+Talk to the doctor yourself while acting as a fictional patient. The web app provides a patient
+role card, suggested phrases, a microphone visualization, a live transcript, and a reference
+diagnosis visible only to you. The OpenAI doctor asks follow-up questions, can request recorded
+exam/test findings, and submits an assessment to compare with the answer key.
+
+```bash
+uv sync
+cp .env.example .env     # if you do not already have .env
+# Add OPENAI_API_KEY to .env when ready; the UI and scripted text preview work without it.
+uv run rsi live
+```
+
+Open **http://localhost:8000**, select a patient, and click **Start voice visit**. Allow microphone
+access, then talk naturally; the doctor opens the conversation and pauses for your answers. You
+can interrupt, mute, type replies, reveal the reference diagnosis, and export the transcript.
+Click **End consultation** to release the microphone. A new visit clears the previous transcript.
+Use the **text preview** to explore the interface without a key; it uses explicitly labeled,
+scripted questions and does not generate or grade a diagnosis.
+
+The key is read only by the Python server, never returned to the browser. This demo needs an OpenAI
+API project with billing and access to the configured model; it does not use a ChatGPT subscription
+or the Claude token. The voice model defaults to `gpt-realtime` (`RSI_REALTIME_MODEL` overrides it).
+The separate findings selector and grader use `gpt-4.1-mini` (`RSI_LIVE_HELPER_MODEL` overrides it).
+After adding or changing the key in `.env`, restart the server. You can choose another port with
+`uv run rsi live --port 8001`.
+
+The app binds to loopback by default. Microphone access requires localhost or HTTPS. For a remote
+demo, set `RSI_LIVE_PASSWORD` in `.env`, restart the server, and use an HTTPS tunnel or reverse proxy.
+The shared password protects the app and every API endpoint. Sign-in uses an HttpOnly session
+cookie (Secure over HTTPS) and rate limits wrong-password attempts. Leave the password blank for
+local-only use. Voices are sent to OpenAI over WebRTC. Transcript and
+patient UI state stay in the browser; per-visit tool and assessment state is held in server memory.
+Visits expire after an hour and are removed on the next access/new visit or server restart.
+Export downloads a local text file; no audio is recorded
+by the app.
+
+Only **training cases** are offered. The doctor receives demographics and the promoted harness's
+lessons, not the patient notes, symptom hints, or reference answer. Physical findings are returned
+only on request by a separate record selector; the server supplies the original selected values
+with diagnosis names/acronyms redacted. Unrecorded results are labeled unavailable. Ten exam/test
+requests are allowed. Assessment grading runs separately, and its answer/score goes only to the UI,
+never back into the doctor conversation. A person can still intentionally reveal the answer by
+saying it aloud; the demo does not filter human speech.
+
+Implementation: `src/rsi/live.py` and `src/rsi/live_static/`. Run `uv run pytest` for offline API,
+privacy, error handling and tool lifecycle checks. Voice media and real model behavior require
+a microphone, network access and an API key for a live smoke test. This adapts the doctor harness
+for an OpenAI voice model; it does not represent the Claude harness's benchmark accuracy.
+
+For the browser integration checks, start the server, install Playwright in a temporary folder,
+and run the script below. It uses local Chromium and synthetic media/mocked Realtime events;
+it makes no OpenAI requests and does not access your physical microphone.
+
+```bash
+npm install --prefix /tmp/rsi-browser playwright
+NODE_PATH=/tmp/rsi-browser/node_modules node tests/browser_live.cjs
+```
+
+Set `CHROMIUM_PATH` if Chromium is elsewhere, `RSI_DEMO_URL` for a different URL, and
+`RSI_DEMO_PASSWORD` when testing a password-protected demo.
+
+API references: [WebRTC sessions](https://developers.openai.com/api/docs/guides/voice-webrtc),
+[Realtime conversations and tools](https://developers.openai.com/api/docs/guides/realtime-conversations),
+and [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+
 ```
 case bank (AgentClinic MedQA, 215 cases: train 115 / dev 40 / test 60)
    │ hidden case

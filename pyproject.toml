@@ -5,6 +5,9 @@ description = "Self-improving diagnosis harness on the Claude Agent SDK"
 requires-python = ">=3.12"
 dependencies = [
     "claude-agent-sdk>=0.2.165",
+    "fastapi>=0.143.0",
+    "httpx>=0.28.1",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [project.scripts]

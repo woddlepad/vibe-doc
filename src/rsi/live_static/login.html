@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Enter the consultation lab · Doctor Live</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/style.css" />
+    <script src="/assets/login.js" defer></script>
+  </head>
+  <body class="login-body">
+    <main class="login-panel panel">
+      <span class="brand-mark" aria-hidden="true">✚</span>
+      <p class="eyebrow">THE CONSULTATION LAB</p>
+      <h1>Come on in.</h1>
+      <p class="subtitle">Enter the demo password to talk with Dr. Alex.</p>
+      <form id="login-form">
+        <label class="field-label" for="password">Demo password</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+          maxlength="200"
+          autofocus
+        />
+        <p id="login-error" role="alert" hidden></p>
+        <button id="login-submit" class="button primary" type="submit">
+          Open the demo <span aria-hidden="true">→</span>
+        </button>
+      </form>
+    </main>
+  </body>
+</html>

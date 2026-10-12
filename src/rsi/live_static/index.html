@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f7f5" />
+    <title>Doctor Live · A conversation, a diagnosis</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/style.css" />
+    <script type="module" src="/assets/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Doctor Live home"
+        ><span class="brand-mark">✚</span
+        ><span>Doctor<span class="brand-light">Live</span></span></a
+      >
+      <span class="top-tag">THE CONSULTATION LAB</span>
+      <div class="header-actions">
+        <span id="connection-badge" class="badge"
+          ><i></i>Checking connection</span
+        ><button id="setup-button" class="button quiet">
+          Setup <span aria-hidden="true">↗</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">LISTEN. ASK. UNDERSTAND.</p>
+          <h1>Good care starts with listening.</h1>
+          <p class="subtitle">
+            Step into a patient’s shoes. Talk with an AI doctor. See where the
+            conversation leads.
+          </p>
+        </div>
+        <span class="sandbox-label"
+          ><span aria-hidden="true">◇</span> Fictional patients. Real
+          conversation.</span
+        >
+      </section>
+      <div id="error-banner" class="notice error" role="alert" hidden>
+        <span id="error-message"></span
+        ><button id="dismiss-error" aria-label="Dismiss error">×</button>
+      </div>
+
+      <div class="workspace">
+        <aside class="patient-panel panel">
+          <div class="panel-heading">
+            <h2>Your patient card</h2>
+            <span class="tiny-tag">ONLY YOU CAN SEE</span>
+          </div>
+          <label class="field-label" for="case-select">Choose a case</label
+          ><select id="case-select" disabled>
+            <option>Loading patients…</option>
+          </select>
+          <div class="patient-profile">
+            <div id="patient-avatar" class="patient-avatar">04</div>
+            <div>
+              <p id="patient-id" class="eyebrow">PATIENT 004</p>
+              <h3 id="demographics">Loading patient…</h3>
+              <span class="subtle">You’re playing this patient</span>
+            </div>
+          </div>
+          <div class="complaint-box">
+            <span class="field-label">REASON FOR VISIT</span>
+            <p id="complaint">—</p>
+          </div>
+          <div id="patient-notes" class="patient-notes"></div>
+          <div class="role-note">
+            <span aria-hidden="true">↳</span>
+            <p>
+              Answer in your own words. Share details as the doctor asks. The
+              doctor can’t read this card.
+            </p>
+          </div>
+        </aside>
+
+        <section class="consultation">
+          <div class="voice-panel panel">
+            <div class="voice-top">
+              <span class="doctor-identity"
+                ><span class="status-dot"></span> Dr. Alex
+                <span class="subtle">· AI physician</span></span
+              ><span id="timer" class="timer" aria-label="Visit duration"
+                >00:00</span
+              >
+            </div>
+            <div id="voice-stage" class="voice-stage" data-state="idle">
+              <canvas
+                id="voice-canvas"
+                width="520"
+                height="290"
+                aria-label="Audio activity visualization"
+              ></canvas>
+              <div class="orb-symbol" aria-hidden="true">
+                <svg viewBox="0 0 44 44">
+                  <path
+                    d="M12 15v8a10 10 0 0 0 20 0v-8M12 15a3 3 0 1 1 0-6m20 6a3 3 0 1 0 0-6M22 33v1a6 6 0 0 0 12 0v-4"
+                  />
+                  <circle cx="34" cy="27" r="3" />
+                </svg>
+              </div>
+              <span class="orb-label" id="orb-label">READY WHEN YOU ARE</span>
+            </div>
+            <h2 id="voice-title">A little conversation. A lot of insight.</h2>
+            <p id="voice-description">
+              Your doctor will ask questions, listen, and connect the dots.
+            </p>
+            <div class="voice-controls">
+              <button
+                id="mute-button"
+                class="round-button"
+                aria-label="Mute microphone"
+                aria-pressed="false"
+                disabled
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="2" width="6" height="12" rx="3" />
+                  <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" />
+                </svg></button
+              ><button id="start-button" class="button primary">
+                <span aria-hidden="true">◉</span> Start voice visit</button
+              ><button
+                id="end-button"
+                class="round-button end-button"
+                aria-label="End consultation"
+                disabled
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 15v-4a14 14 0 0 1 16 0v4l-5-1v-3a10 10 0 0 0-6 0v3Z"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div class="voice-foot">
+              <span id="mode-label"><i></i> OpenAI Realtime voice</span
+              ><button id="preview-button" class="text-button">
+                Try a text preview <span aria-hidden="true">→</span>
+              </button>
+            </div>
+            <button id="play-audio" class="text-button" hidden>
+              Play doctor audio
+            </button>
+          </div>
+
+          <div class="transcript-panel panel">
+            <div class="panel-heading">
+              <h2>Conversation</h2>
+              <div class="transcript-actions">
+                <span id="transcript-count" class="subtle">Live transcript</span
+                ><button id="export-button" class="text-button" disabled>
+                  Export <span aria-hidden="true">↓</span>
+                </button>
+              </div>
+            </div>
+            <div
+              id="transcript"
+              class="transcript"
+              role="log"
+              aria-label="Consultation transcript"
+              aria-live="polite"
+              aria-relevant="additions text"
+            >
+              <div id="empty-transcript" class="empty-state">
+                <span aria-hidden="true">“</span>
+                <p>Every good diagnosis begins with a question.</p>
+                <small>Your conversation will appear here as you talk.</small>
+              </div>
+            </div>
+            <form id="text-form" class="text-form">
+              <label for="text-input" class="sr-only"
+                >Message to the doctor</label
+              ><input
+                id="text-input"
+                placeholder="Or type what you’d like to say…"
+                maxlength="3000"
+                autocomplete="off"
+                disabled
+              /><button
+                id="send-button"
+                type="submit"
+                aria-label="Send message"
+                disabled
+              >
+                ↑
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <aside class="guide-column">
+          <section class="guide-panel panel">
+            <div class="panel-heading">
+              <h2>A little help getting started</h2>
+              <span aria-hidden="true">✧</span>
+            </div>
+            <p class="guide-description">
+              Not sure what to say? Use these as a starting point, or let the
+              doctor guide you.
+            </p>
+            <div id="suggestions" class="suggestions"></div>
+            <p class="hint-footer">
+              Click a phrase to put it in the message box. During a voice visit,
+              you can simply say it aloud.
+            </p>
+          </section>
+          <section class="answer-panel panel">
+            <div class="panel-heading">
+              <h2>The answer key</h2>
+              <span aria-hidden="true">◎</span>
+            </div>
+            <p class="guide-description">
+              A reference for you, kept out of the doctor’s context.
+            </p>
+            <button
+              id="reveal-button"
+              class="button answer-button"
+              aria-expanded="false"
+              aria-controls="reference-answer"
+            >
+              Reveal diagnosis <span aria-hidden="true">↗</span>
+            </button>
+            <div id="reference-answer" class="reference-answer" hidden>
+              <span class="field-label">REFERENCE DIAGNOSIS</span>
+              <h3 id="answer-text"></h3>
+              <p>
+                The doctor must get here by asking questions and interpreting
+                findings.
+              </p>
+            </div>
+          </section>
+          <section id="assessment-panel" class="assessment-panel panel" hidden>
+            <div class="panel-heading">
+              <h2>Doctor’s assessment</h2>
+              <span id="verdict-badge" class="tiny-tag"></span>
+            </div>
+            <h3 id="assessment-diagnosis"></h3>
+            <p id="assessment-reasoning"></p>
+            <p id="assessment-differential" class="subtle"></p>
+            <p id="assessment-verdict" class="grade-note"></p>
+            <button id="retry-grade" class="text-button" hidden>
+              Retry comparison →
+            </button>
+          </section>
+          <div class="how-it-works">
+            <p class="eyebrow">THE IDEA IS SIMPLE</p>
+            <div>
+              <span>01</span>
+              <p>You bring the symptoms.</p>
+            </div>
+            <div>
+              <span>02</span>
+              <p>The doctor asks better questions.</p>
+            </div>
+            <div>
+              <span>03</span>
+              <p>Compare the final assessment.</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <footer>
+        <span
+          >DOCTOR LIVE <span class="footer-divider">/</span> THE CONSULTATION
+          LAB</span
+        >
+        <p>
+          A training simulation using fictional AgentClinic cases. Not for
+          medical care.
+        </p>
+      </footer>
+    </main>
+
+    <dialog id="setup-dialog">
+      <div class="dialog-heading">
+        <span class="brand-mark">✚</span
+        ><button id="close-setup" class="round-button" aria-label="Close setup">
+          ×
+        </button>
+      </div>
+      <p class="eyebrow">ONE KEY. THEN YOU’RE READY.</p>
+      <h2>Bring the doctor to life.</h2>
+      <p>
+        Add your OpenAI API key to the project’s <code>.env</code> file, then
+        restart the server. The key stays on the server.
+      </p>
+      <pre>OPENAI_API_KEY=your-key-here</pre>
+      <p class="field-label">START THE DEMO</p>
+      <pre>uv run rsi live</pre>
+      <p>
+        Open <code>http://localhost:8000</code> in Chrome or another WebRTC
+        browser and allow microphone access. For access from another device,
+        serve it over HTTPS.
+      </p>
+      <p class="subtle">
+        Use an OpenAI API project with billing and Realtime model access. The
+        text preview works without a key.
+      </p>
+      <button id="check-config" class="button primary">
+        Check connection <span aria-hidden="true">→</span>
+      </button>
+      <p id="setup-status" role="status"></p>
+      <a
+        href="https://developers.openai.com/api/docs/guides/realtime"
+        target="_blank"
+        rel="noreferrer"
+        >OpenAI Realtime documentation ↗</a
+      >
+    </dialog>
+  </body>
+</html>

@@ -1,11 +1,39 @@
-# rsi-doc: a self-improving diagnosis harness
+# rsi-doc
+
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![Claude Agent SDK](https://img.shields.io/badge/Claude-Agent%20SDK-cc785c?style=flat-square&logo=anthropic&logoColor=white)](https://github.com/anthropics/claude-agent-sdk-python)
+[![OpenAI Realtime voice](https://img.shields.io/badge/Voice-OpenAI%20Realtime-16483e?style=flat-square)](#doctor-live-voice-demo)
+[![AgentClinic: 215 cases](https://img.shields.io/badge/AgentClinic-215%20cases-786852?style=flat-square)](data/agentclinic/README.md)
+[![v001 held-out test: 49/60, 81.7%](https://img.shields.io/badge/v001%20held--out%20test-49%2F60%20%2881.7%25%29-52764f?style=flat-square)](experiments/evals/v001-test-final.json)
+
+![A doctor that learns from its misses: hoop cover from the rsi-doc pitch deck](docs/assets/hero.png)
+
+**[Voice demo](#doctor-live-voice-demo) · [Results](SUMMARY.md) · [Pitch deck](deck/) · [Experiment log](experiments/README.md)**
 
 An AI doctor interviews simulated patients and submits a diagnosis, and the diagnosis is scored
 against the answer key. A Claude Code meta-agent then studies the failures and rewrites the doctor's
 harness (prompt, lessons, skills, budgets). A new version is kept only if it diagnoses
 more held-out patients correctly.
 
-Everything runs on the **Claude Agent SDK**, so it can use a Claude subscription.
+The self-improvement loop runs on the **Claude Agent SDK**, so it can use a Claude subscription.
+The interactive **Doctor Live** demo uses OpenAI Realtime voice.
+
+## How the harness works
+
+![Consultation diagram: a patient tells their story, the doctor asks questions and requests exams/tests, and a judge checks the submitted diagnosis](docs/assets/clinic-flow.png)
+
+The patient, examiner and judge are frozen. The doctor sees only the patient’s replies and
+requested findings; the answer key stays hidden. It submits one diagnosis for scoring.
+
+![Harness improvement loop: run training cases, study failed transcripts, rewrite system.md, lessons.md, skills and config.json, then prove the candidate on held-out cases](docs/assets/harness-loop.png)
+
+The optimizer studies training failures and proposes a targeted harness change. Candidates face
+the same held-out development cases as their parent and are kept only if they clear the promotion
+gate. The doctor model stays locked. The test split is scored once, at the end.
+
+The recorded **v001** run improved development accuracy from **77.5% to 85.0%** and achieved
+**49/60 (81.7%)** on the final test set. See the [results summary](SUMMARY.md) for uncertainty and
+limitations; these are the Claude harness results, separate from the voice demo.
 
 ## Doctor Live voice demo
 
@@ -73,16 +101,6 @@ Set `CHROMIUM_PATH` if Chromium is elsewhere, `RSI_DEMO_URL` for a different URL
 API references: [WebRTC sessions](https://developers.openai.com/api/docs/guides/voice-webrtc),
 [Realtime conversations and tools](https://developers.openai.com/api/docs/guides/realtime-conversations),
 and [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
-
-```
-case bank (AgentClinic MedQA, 215 cases: train 115 / dev 40 / test 60)
-   │ hidden case
-   ▼
-patient sim (frozen) ⇄ doctor harness (vNNN) ──► judge (frozen) ──► traces + scores
-                                ▲                                       │
-                                │ promote if dev improves               ▼
-                       dev gate ◄── candidate ◄── optimizer (Claude Code, edits harness/ only)
-```
 
 ## Setup
 
